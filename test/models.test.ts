@@ -4,10 +4,19 @@ import { FALLBACK_MODELS, projectModels, resolveAcpModelId, splitEffortSuffix } 
 import { createAntigravityProvider } from "../src/provider.js";
 
 describe("projectModels", () => {
-	it("keeps Flash as the conservative offline default while allowing explicit Argon selection", () => {
+	it("keeps Flash as the conservative offline default", () => {
 		expect(FALLBACK_MODELS[0]?.id).toBe("gemini-3.8-flash");
-		expect(FALLBACK_MODELS.some((model) => model.id === "gemini-4-argon")).toBe(true);
 	});
+
+	it.each(["gemini-4-argon", "gemini-4-hydrogen"])(
+		"exposes %s offline with every advertised ACP effort id",
+		(id) => {
+			const model = FALLBACK_MODELS.find((candidate) => candidate.id === id);
+			expect(model?.thinkingLevelMap?.low).toBe(`${id}-low`);
+			expect(model?.thinkingLevelMap?.medium).toBe(`${id}-medium`);
+			expect(resolveAcpModelId(model!, "high")).toBe(`${id}-high`);
+		},
+	);
 
 	it.each(["low", "medium", "high"])("splits a known %s suffix without truncating the base", (effort) => {
 		expect(splitEffortSuffix(`gemini-hyphenated-base-${effort}`)).toEqual({ base: "gemini-hyphenated-base", effort });
