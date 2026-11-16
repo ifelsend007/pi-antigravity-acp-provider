@@ -1,5 +1,6 @@
 import type { Provider } from "@earendil-works/pi-ai";
 
+import { sweepLaunchTemps } from "./acp/launch-temp.js";
 import { loadConfig } from "./config.js";
 import { PACKAGE_VERSION } from "./constants.js";
 import { createAntigravityProvider } from "./provider.js";
@@ -22,6 +23,9 @@ export function acquireSharedRuntime(connectionFactory?: AntigravityConnectionFa
 		// A different package version never shares; an unreferenced old stack would otherwise leak.
 		if (shared && shared.refs === 0) void shared.runtime.close();
 		const runtime = new AntigravityRuntime(connectionFactory, loadConfig().permissions);
+		// Startup is the only safe moment to reclaim launch directories whose
+		// owning processes are gone; a running server needs its unpacked runtime.
+		sweepLaunchTemps();
 		shared = { runtime, provider: createAntigravityProvider(runtime).provider, refs: 0, version: PACKAGE_VERSION };
 		slots[KEY] = shared;
 	}

@@ -6,6 +6,8 @@ process.stderr.write(
 	JSON.stringify({
 		sslCertFile: process.env.SSL_CERT_FILE ?? null,
 		forceFileStorage: process.env.AGY_ACP_FORCE_FILE_STORAGE ?? null,
+		temp: process.env.TEMP ?? null,
+		tmpdir: process.env.TMPDIR ?? null,
 	}),
 );
 process.exit(0);

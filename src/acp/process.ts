@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { resolveAntigravityAcpLaunch } from "./antigravity.js";
 import { redact } from "./errors.js";
+import { createLaunchTemp, recordServerPid, scheduleLaunchTempRemoval, type LaunchTemp } from "./launch-temp.js";
 import { applyAcpProxyEnvironment } from "./proxy.js";
 import { applyCredentialStorageEnvironment, type CredentialStorageOptions } from "./credential-storage.js";
 const STDERR_LIMIT = 16 * 1024;
@@ -22,6 +23,9 @@ export interface AntigravityProcessOptions {
 	/** Overrides the credential-storage resolution seams (keychain probe and
 	 * token path) in tests; production callers leave this unset. */
 	credentialStorage?: Omit<CredentialStorageOptions, "env">;
+	/** Root for the per-launch temp directory the server unpacks itself into.
+	 * `null` disables it; unset confines only real Antigravity launches. */
+	launchTempRoot?: string | null;
 }
 
 export interface ProcessExit {
@@ -124,6 +128,7 @@ export class AntigravityProcess {
 	readonly input: ReadableStream<Uint8Array>;
 	readonly output: WritableStream<Uint8Array>;
 	readonly exited: Promise<ProcessExit>;
+	readonly launchTempDir?: string;
 	private stderr = "";
 	private ignoredStdoutNoise = 0;
 	private settled = false;
@@ -143,13 +148,16 @@ export class AntigravityProcess {
 			command = nodeBinary;
 			args = [resolveSupervisorEntry(), "--command", launch.command, ...launch.args];
 		}
+		const launchTemp = resolveLaunchTemp(options);
 		let resolveExit!: (exit: ProcessExit) => void;
 		this.exited = new Promise((resolve) => {
 			resolveExit = resolve;
 		});
 
 		const env = applyCredentialStorageEnvironment(
-			applyDefaultTlsEnvironment(applyAcpProxyEnvironment(options.env ?? process.env)),
+			applyDefaultTlsEnvironment(
+				applyAcpProxyEnvironment(launchTempEnv(options.env ?? process.env, launchTemp)),
+			),
 			options.credentialStorage ?? {},
 		);
 		const child = spawn(command, args, {
@@ -161,6 +169,10 @@ export class AntigravityProcess {
 			detached: process.platform !== "win32",
 		});
 		this.child = child;
+		if (launchTemp) {
+			this.launchTempDir = launchTemp.dir;
+			recordServerPid(launchTemp.dir, child.pid);
+		}
 		child.stderr.setEncoding("utf8");
 		child.stderr.on("data", (chunk: string) => {
 			this.stderr = redact((this.stderr + chunk).slice(-STDERR_LIMIT));
@@ -243,6 +255,7 @@ export class AntigravityProcess {
 	): void {
 		if (this.settled) return;
 		this.settled = true;
+		if (this.launchTempDir) scheduleLaunchTempRemoval(this.launchTempDir);
 		resolve({ code, signal, stderrTail: redact(stderrTail) });
 	}
 }
@@ -254,3 +267,16 @@ function delay(ms: number): Promise<void> {
 	});
 }
 
+/** Only a real Antigravity launch gets the confined temp root; an explicit
+ * command or entry path (fixtures, `AGY_ACP_BIN` wrappers in tests) keeps the
+ * ambient environment unless a root is passed in. */
+function resolveLaunchTemp(options: AntigravityProcessOptions): LaunchTemp | undefined {
+	const root = options.launchTempRoot;
+	if (root === null) return undefined;
+	if (root !== undefined) return createLaunchTemp(root);
+	return options.command || options.entryPath ? undefined : createLaunchTemp();
+}
+
+function launchTempEnv(env: NodeJS.ProcessEnv, launchTemp: LaunchTemp | undefined): NodeJS.ProcessEnv {
+	return launchTemp ? { ...env, ...launchTemp.env } : env;
+}
