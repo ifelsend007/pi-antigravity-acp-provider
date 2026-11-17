@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+	configuredLaunchTempRoot,
 	createLaunchTemp,
 	defaultLaunchTempRoot,
 	recordServerPid,
@@ -193,3 +194,34 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 	}
 	throw new Error("condition was not met in time");
 }
+
+describe("configuredLaunchTempRoot", () => {
+	const original = process.env.PI_CODING_AGENT_DIR;
+	const cleanup: string[] = [];
+
+	afterEach(() => {
+		if (original === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = original;
+		for (const directory of cleanup.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+	});
+
+	it("uses the root configured in config.json", () => {
+		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-agent-"));
+		cleanup.push(agentDir);
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const file = path.join(agentDir, "antigravity-acp-provider", "config.json");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(
+			file,
+			JSON.stringify({ permissions: "yolo", runtimeUpdates: "automatic", launchTempRoot: "V:/tmp" }),
+		);
+		expect(configuredLaunchTempRoot()).toBe(path.resolve("V:/tmp"));
+	});
+
+	it("falls back to the managed default without a configured root", () => {
+		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-agent-"));
+		cleanup.push(agentDir);
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		expect(configuredLaunchTempRoot()).toBe(defaultLaunchTempRoot());
+	});
+});

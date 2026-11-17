@@ -43,19 +43,19 @@ export const CONFIG_PATH = resolveConfigPath();
 
 export function loadConfig(file = resolveConfigPath()): AntigravityAcpConfig {
 	if (file === resolveConfigPath()) migrateConfig(file);
-	try {
-		const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as {
-			permissions?: unknown;
-			runtimeUpdates?: unknown;
-		};
-		return {
-			permissions: isPermissionMode(parsed.permissions) ? parsed.permissions : "yolo",
-			runtimeUpdates: isRuntimeUpdateMode(parsed.runtimeUpdates) ? parsed.runtimeUpdates : "automatic",
-		};
-	} catch {
-		// Missing or malformed configuration uses the documented defaults.
-	}
-	return { permissions: "yolo", runtimeUpdates: "automatic" };
+	const parsed = readConfigFile(file);
+	return {
+		permissions: isPermissionMode(parsed.permissions) ? parsed.permissions : "yolo",
+		runtimeUpdates: isRuntimeUpdateMode(parsed.runtimeUpdates) ? parsed.runtimeUpdates : "automatic",
+	};
+}
+
+/** Directory the Antigravity server unpacks itself into, when the user picked
+ * one. Kept out of `AntigravityAcpConfig` because that type is the wizard's
+ * three toggles; hand-edited keys like this one survive a wizard write. */
+export function loadLaunchTempRoot(file = resolveConfigPath()): string | null {
+	const value = readConfigFile(file).launchTempRoot;
+	return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export function savePermissionMode(mode: PermissionMode, file = resolveConfigPath()): void {
@@ -70,8 +70,21 @@ function writeConfig(config: AntigravityAcpConfig, file: string): void {
 	const directory = path.dirname(file);
 	fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
 	const temporary = `${file}.${process.pid}.tmp`;
-	fs.writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+	// Merge over the file: keys the wizard does not own (launchTempRoot and any
+	// future hand-edited setting) must survive a permission or update toggle.
+	const merged = { ...readConfigFile(file), ...config };
+	fs.writeFileSync(temporary, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
 	fs.renameSync(temporary, file);
+}
+
+function readConfigFile(file: string): Record<string, unknown> {
+	try {
+		const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+		return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+	} catch {
+		// Missing or malformed configuration uses the documented defaults.
+		return {};
+	}
 }
 
 function migrateConfig(targetFile = resolveConfigPath()): void {

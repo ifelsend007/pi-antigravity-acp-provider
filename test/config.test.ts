@@ -7,6 +7,7 @@ import {
 	DEFAULT_CONFIG_PATH,
 	LEGACY_GEMINI_CONFIG_PATH,
 	loadConfig,
+	loadLaunchTempRoot,
 	resolveConfigPath,
 	resolveConfigRoot,
 	resolvePiAgentDir,
@@ -149,5 +150,33 @@ describe("permission configuration", () => {
 		expect(loadConfig()).toEqual({ permissions: "yolo", runtimeUpdates: "automatic" });
 		expect(fs.existsSync(path.join(path.dirname(target), "sessions.json"))).toBe(false);
 		expect(fs.existsSync(path.join(source, "sessions.json"))).toBe(true);
+	});
+});
+
+describe("launch temp root configuration", () => {
+	it.each([
+		{ name: "an absent key", content: {}, expected: null },
+		{ name: "a blank value", content: { launchTempRoot: "   " }, expected: null },
+		{ name: "a non-string value", content: { launchTempRoot: 42 }, expected: null },
+		{ name: "a configured root", content: { launchTempRoot: " V:/tmp " }, expected: "V:/tmp" },
+	])("reads $name", ({ content, expected }) => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "antigravity-acp-config-"));
+		directories.push(directory);
+		const file = path.join(directory, "config.json");
+		fs.writeFileSync(file, JSON.stringify(content));
+		expect(loadLaunchTempRoot(file)).toBe(expected);
+	});
+
+	it("survives a permission toggle that rewrites the file", () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "antigravity-acp-config-"));
+		directories.push(directory);
+		const file = path.join(directory, "config.json");
+		fs.writeFileSync(
+			file,
+			JSON.stringify({ permissions: "yolo", runtimeUpdates: "automatic", launchTempRoot: "V:/tmp" }),
+		);
+		savePermissionMode("auto_edit", file);
+		expect(loadConfig(file)).toEqual({ permissions: "auto_edit", runtimeUpdates: "automatic" });
+		expect(loadLaunchTempRoot(file)).toBe("V:/tmp");
 	});
 });

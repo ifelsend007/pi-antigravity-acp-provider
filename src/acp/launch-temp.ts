@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { loadLaunchTempRoot } from "../config.js";
+
 const LAUNCH_DIR_PREFIX = "launch-";
 const RECORD_FILE = ".launch.json";
 /** A directory younger than this may belong to a spawn that has not recorded
@@ -27,13 +29,20 @@ export function defaultLaunchTempRoot(): string {
 	return path.join(os.homedir(), ".local", "opt", "agy-acp", "tmp");
 }
 
+/** Where launches unpack: the root the user configured in config.json, else the
+ * managed default next to the installed runtime. */
+export function configuredLaunchTempRoot(): string {
+	const configured = loadLaunchTempRoot();
+	return configured ? path.resolve(configured) : defaultLaunchTempRoot();
+}
+
 /** Antigravity's server is a PyInstaller one-file build: every start unpacks
  * its whole CPython runtime (~137 MB) into the temp directory it inherits and
  * only removes that copy on a clean exit. Giving each launch its own temp
  * directory keeps those copies out of the system temp directory and makes each
  * one attributable to the process that created it. */
 export function createLaunchTemp(
-	root: string = defaultLaunchTempRoot(),
+	root: string = configuredLaunchTempRoot(),
 	piPid: number = process.pid,
 	now: number = Date.now(),
 ): LaunchTemp {
@@ -79,7 +88,7 @@ export function scheduleLaunchTempRemoval(
  * A PID that still exists is never aged out: deleting the unpacked runtime of a
  * running server crashes it, and a leaked directory is cheaper than that. */
 export function sweepLaunchTemps(
-	root: string = defaultLaunchTempRoot(),
+	root: string = configuredLaunchTempRoot(),
 	isAlive: (pid: number) => boolean = pidAlive,
 	now: number = Date.now(),
 ): string[] {
