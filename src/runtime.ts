@@ -36,7 +36,7 @@ import {
 	PERMISSION_TOOL_NAME,
 } from "./constants.js";
 export { MANAGED_AUTH_MARKER, PERMISSION_RESULT_KIND, PERMISSION_TOOL_NAME } from "./constants.js";
-import { mapSessionUpdate } from "./acp/events.js";
+import { mapSessionUpdate, type AcpActivity } from "./acp/events.js";
 import { ensureAntigravityAcpReady } from "./acp/setup.js";
 import { HeadlessOAuthRelay, shouldUseHeadlessOAuth } from "./acp/headless-oauth.js";
 import {
@@ -46,7 +46,7 @@ import {
 	type ToolOmission,
 	type PiToolInvocation,
 } from "./mcp/bridge.js";
-import type { PermissionMode } from "./config.js";
+import type { PermissionMode, ToolActivityMode } from "./config.js";
 import { resolveAcpModelId } from "./models.js";
 import { type PromptParts, buildPromptParts, currentSystemInstructions } from "./stream/context.js";
 import { PiEventWriter } from "./stream/pi-events.js";
@@ -59,6 +59,25 @@ const QUOTA_CACHE_MS = 60_000;
 const QUOTA_TIMEOUT_MS = 30_000;
 
 type AntigravityModel = Model<"antigravity-acp">;
+
+/** Pi's stream has no channel for another agent's tool activity, so it can only
+ * be interleaved into the thinking block or dropped. */
+export function activityOutput(
+	activity: AcpActivity,
+	toolActivity: ToolActivityMode,
+): { kind: "text" | "thinking"; delta: string } | undefined {
+	switch (activity.type) {
+		case "text":
+			return { kind: "text", delta: activity.delta };
+		case "thought":
+			return { kind: "thinking", delta: activity.delta };
+		case "tool":
+		case "plan":
+			return toolActivity === "transcript" ? { kind: "thinking", delta: activity.text } : undefined;
+		default:
+			return undefined;
+	}
+}
 
 interface PendingPermission {
 	id: string;
@@ -162,6 +181,7 @@ export class AntigravityRuntime {
 	private readonly sessionStore: AcpSessionStore | undefined;
 	private readonly metrics = new RuntimeMetrics();
 	private permissionMode: PermissionMode;
+	private readonly toolActivity: ToolActivityMode;
 	private quotaCache: AntigravityQuotaSnapshot | undefined;
 	private quotaInFlight: { epoch: number; snapshot: Promise<AntigravityQuotaSnapshot> } | undefined;
 
@@ -169,10 +189,12 @@ export class AntigravityRuntime {
 		connectionFactory?: AntigravityConnectionFactory,
 		permissionMode: PermissionMode = "yolo",
 		sessionStore?: AcpSessionStore,
+		toolActivity: ToolActivityMode = "off",
 	) {
 		this.connectionFactory = connectionFactory ?? ((options) => new AntigravityAcpConnection(options));
 		this.ensureAgent = connectionFactory === undefined;
 		this.permissionMode = permissionMode;
+		this.toolActivity = toolActivity;
 		this.sessionStore = sessionStore ?? (this.ensureAgent ? new AcpSessionStore() : undefined);
 	}
 
@@ -978,9 +1000,9 @@ export class AntigravityRuntime {
 		}
 		if (!binding.writer) return;
 		for (const activity of mapSessionUpdate(notification)) {
-			if (activity.type === "text") binding.writer.text(activity.delta);
-			else if (activity.type === "thought") binding.writer.thinking(activity.delta);
-			else if (activity.type === "tool" || activity.type === "plan") binding.writer.thinking(activity.text);
+			const output = activityOutput(activity, this.toolActivity);
+			if (output?.kind === "text") binding.writer.text(output.delta);
+			else if (output) binding.writer.thinking(output.delta);
 			else if (activity.type === "usage") {
 				binding.contextUsed = activity.used;
 				binding.inferences += 1;

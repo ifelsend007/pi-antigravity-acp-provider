@@ -4,6 +4,7 @@ import path from "node:path";
 
 export type PermissionMode = "default" | "auto_edit" | "yolo";
 export type RuntimeUpdateMode = "automatic" | "notify" | "manual";
+export type ToolActivityMode = "off" | "transcript";
 
 export interface AntigravityAcpConfig {
 	permissions: PermissionMode;
@@ -56,6 +57,13 @@ export function loadConfig(file = resolveConfigPath()): AntigravityAcpConfig {
 export function loadLaunchTempRoot(file = resolveConfigPath()): string | null {
 	const value = readConfigFile(file).launchTempRoot;
 	return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** Antigravity's ACP stream carries no thought content of its own, so tool
+ * activity can only be interleaved into the thinking block or dropped. Dropped
+ * by default: the thinking block is then empty rather than full of tool logs. */
+export function loadToolActivity(file = resolveConfigPath()): ToolActivityMode {
+	return readConfigFile(file).toolActivity === "transcript" ? "transcript" : "off";
 }
 
 export function savePermissionMode(mode: PermissionMode, file = resolveConfigPath()): void {

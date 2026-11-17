@@ -115,6 +115,8 @@ Images/resources in agent message chunks are unsupported by Pi assistant model o
 
 Do not invent hidden chain-of-thought. Forward only the thought summary text Gemini ACP explicitly emits. Redact nothing except secrets accidentally present in diagnostics; user-visible content should remain faithful.
 
+The pinned server emits no `agent_thought_chunk` at all (checked with `thought_level: high` on both `gemini-4-hydrogen` and `gemini-4-argon`): the mapping stays for servers that do, but nothing in the current build exercises it.
+
 ### Tool calls and updates
 
 Maintain a per-turn map keyed by ACP `toolCallId`:
@@ -130,11 +132,13 @@ interface ToolActivity {
 }
 ```
 
-Default v1 rendering:
+Default v1 rendering, gated by the `toolActivity` config key (`off` unless set to `transcript`):
 
-- `tool_call`: close text, append a concise thinking line (`[Gemini tool: title — status]`).
+- `tool_call`: close text, then — only when tool activity is enabled — append a concise thinking line (`[Antigravity tool: title — status]`).
 - `tool_call_update`: append only changed status/output; render diff content with bounded unified-diff formatting; do not dump raw input/output by default.
 - completion/failure: update the line/block; preserve structured activity in message diagnostics if Pi's diagnostic type allows bounded JSON.
+
+Pi's stream has no channel for another agent's tool activity: the only options are the thinking block or nothing. Since the server supplies no thought content of its own, the default is to drop it so the thinking block is not filled with tool logs.
 
 Never emit a Pi executable `toolCall` for a Gemini tool that Gemini has already or will execute. The exception is provider-owned permission/MCP round trips, where Pi is intentionally the executor/decision maker.
 
@@ -142,7 +146,7 @@ This means Gemini-native tool operations are not represented as Pi `ToolCall`/`T
 
 ### Plans and commands
 
-- Plan chunks: thinking blocks, unless ACP explicitly marks final user-facing text.
+- Plan chunks: same channel as tool activity — thinking blocks when `toolActivity` is `transcript`, dropped otherwise; never user-facing text unless ACP explicitly marks it final.
 - Available command updates: runtime diagnostics only; do not register arbitrary Pi commands at turn time.
 - Current mode/model updates: update binding after validation; no text unless it contradicts selected Pi state.
 - Unknown updates: ignore safely and count/log type at debug level.
