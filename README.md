@@ -29,7 +29,7 @@ pi
 To run from source instead:
 
 ```bash
-git clone https://github.com/zacbemis/pi-antigravity-acp-provider.git
+git clone https://github.com/ifelsend007/pi-antigravity-acp-provider.git
 cd pi-antigravity-acp-provider
 npm install
 pi --no-extensions -e ./extensions/index.ts
