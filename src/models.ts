@@ -9,7 +9,7 @@ export const PROVIDER_ID = "antigravity-acp";
 export const API_ID = "antigravity-acp";
 
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
-type Effort = "low" | "medium" | "high";
+type Effort = "low" | "medium" | "high" | "xhigh";
 type Variants = Partial<Record<Effort, string>>;
 
 // Bootstrap only: used for the first start before any discovery succeeded. The
@@ -31,6 +31,7 @@ export const FALLBACK_MODELS: readonly Model<typeof API_ID>[] = [
 		low: "gemini-4-hydrogen-low",
 		medium: "gemini-4-hydrogen-medium",
 		high: "gemini-4-hydrogen-high",
+		xhigh: "gemini-4-hydrogen-xhigh",
 	}),
 ];
 
@@ -85,13 +86,13 @@ export function projectModels(models: readonly AcpModelInfo[]): Model<typeof API
 	return projected;
 }
 
-export type ModelEffort = "low" | "medium" | "high";
+export type ModelEffort = "low" | "medium" | "high" | "xhigh";
 
 /** Antigravity advertises effort-qualified ids (`gemini-3.8-flash-high`) while the
  * server's `model` config option takes only the base id and keeps the tier on a
  * selector of its own, so a qualified id has to be split before it is sent. */
 export function splitEffortSuffix(modelId: string): { base: string; effort: ModelEffort } | undefined {
-	const match = /^(.*)-(low|medium|high)$/u.exec(modelId);
+	const match = /^(.*)-(low|medium|high|xhigh)$/u.exec(modelId);
 	if (!match?.[1]) return undefined;
 	return { base: match[1], effort: match[2] as ModelEffort };
 }
@@ -104,18 +105,22 @@ export function resolveAcpModelId(
 ): string {
 	const map = model.thinkingLevelMap;
 	if (!model.reasoning || !map) return model.id;
-	const preferred: Effort =
+	const preferred: ModelEffort =
 		reasoning === "minimal" || reasoning === "low"
 			? "low"
-			: reasoning === "high" || reasoning === "xhigh" || reasoning === "max"
-				? "high"
-				: "medium";
-	const order: Effort[] =
+			: reasoning === "medium"
+				? "medium"
+				: reasoning === "xhigh" || reasoning === "max"
+					? "xhigh"
+					: "high";
+	const order: ModelEffort[] =
 		preferred === "low"
-			? ["low", "medium", "high"]
-			: preferred === "high"
-				? ["high", "medium", "low"]
-				: ["medium", "high", "low"];
+			? ["low", "medium", "high", "xhigh"]
+			: preferred === "medium"
+				? ["medium", "high", "low", "xhigh"]
+				: preferred === "high"
+					? ["high", "medium", "low", "xhigh"]
+					: ["xhigh", "high", "medium", "low"];
 	for (const effort of order) {
 		const value = map[effort];
 		if (typeof value === "string" && value) return value;
@@ -134,7 +139,7 @@ function reasoningModel(
 		low: variants.low ?? null,
 		medium: variants.medium ?? null,
 		high: variants.high ?? null,
-		xhigh: null,
+		xhigh: variants.xhigh ?? null,
 		max: null,
 	};
 	return baseModel(id, name, true, thinkingLevelMap);
@@ -166,9 +171,13 @@ function baseModel(
 }
 
 function effortFromName(name: string): { baseName: string; effort: Effort } | undefined {
-	const match = name.trim().match(/^(.+?)\s*\((low|medium|high)\)$/iu);
+	const match = name.trim().match(/^(.+?)\s*\((low|medium|high|xhigh|extra[\s-]?high)\)$/iu);
 	if (!match?.[1] || !match[2]) return undefined;
-	return { baseName: match[1].trim(), effort: match[2].toLowerCase() as Effort };
+	const label = match[2].toLowerCase();
+	return {
+		baseName: match[1].trim(),
+		effort: label.startsWith("extra") ? "xhigh" : (label as Effort),
+	};
 }
 
 function effortFromId(id: string): { baseName: string; effort: Effort } | undefined {

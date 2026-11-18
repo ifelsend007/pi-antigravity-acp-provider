@@ -8,7 +8,7 @@ A first-class [Pi](https://github.com/earendil-works/pi) provider for **Google A
 
 - Registers `antigravity-acp/*` models backed by Google Antigravity.
 - Uses ACP protocol v1 and the official TypeScript SDK.
-- Collapses Antigravity's effort-qualified IDs into one entry per model; Pi's Shift+Tab reasoning control selects low/medium/high dynamically.
+- Collapses Antigravity's effort-qualified IDs into one entry per model; Pi's Shift+Tab reasoning control selects low/medium/high (plus xhigh where the server advertises it, currently Gemini 4 Hydrogen) dynamically.
 - Supports Pi streaming, cancellation, usage/quota metadata, lifecycle cleanup, and persisted ACP session restoration across Pi restarts.
 - Routes compatible Pi tools through an authenticated loopback MCP bridge; doctor/status names omitted tools and their reasons.
 - Supports persisted `default`, `auto-edit`, and `yolo` Antigravity permission modes. The requested default is `yolo`; switching to a prompting mode retains the single-use, fail-closed Pi permission broker.

@@ -8,17 +8,32 @@ describe("projectModels", () => {
 		expect(FALLBACK_MODELS[0]?.id).toBe("gemini-3.8-flash");
 	});
 
-	it.each(["gemini-4-argon", "gemini-4-hydrogen"])(
-		"exposes %s offline with every advertised ACP effort id",
-		(id) => {
-			const model = FALLBACK_MODELS.find((candidate) => candidate.id === id);
-			expect(model?.thinkingLevelMap?.low).toBe(`${id}-low`);
-			expect(model?.thinkingLevelMap?.medium).toBe(`${id}-medium`);
-			expect(resolveAcpModelId(model!, "high")).toBe(`${id}-high`);
-		},
-	);
+	it.each([
+		["gemini-4-argon", ["low", "medium", "high"]],
+		["gemini-4-hydrogen", ["low", "medium", "high", "xhigh"]],
+	] as const)("exposes %s offline with every advertised ACP effort id", (id, efforts) => {
+		const model = FALLBACK_MODELS.find((candidate) => candidate.id === id);
+		expect(model?.thinkingLevelMap?.low).toBe(`${id}-low`);
+		expect(model?.thinkingLevelMap?.medium).toBe(`${id}-medium`);
+		expect(resolveAcpModelId(model!, "high")).toBe(`${id}-high`);
+		for (const level of ["low", "medium", "high", "xhigh"] as const) {
+			expect(model?.thinkingLevelMap?.[level]).toBe(
+				(efforts as readonly string[]).includes(level) ? `${id}-${level}` : null,
+			);
+		}
+		expect(model?.thinkingLevelMap?.max).toBeNull();
+	});
 
-	it.each(["low", "medium", "high"])("splits a known %s suffix without truncating the base", (effort) => {
+	it("only Hydrogen accepts the extra-high tier", () => {
+		const hydrogen = FALLBACK_MODELS.find((candidate) => candidate.id === "gemini-4-hydrogen");
+		const argon = FALLBACK_MODELS.find((candidate) => candidate.id === "gemini-4-argon");
+		expect(resolveAcpModelId(hydrogen!, "xhigh")).toBe("gemini-4-hydrogen-xhigh");
+		expect(resolveAcpModelId(hydrogen!, "max")).toBe("gemini-4-hydrogen-xhigh");
+		expect(resolveAcpModelId(argon!, "xhigh")).toBe("gemini-4-argon-high");
+		expect(resolveAcpModelId(argon!, "max")).toBe("gemini-4-argon-high");
+	});
+
+	it.each(["low", "medium", "high", "xhigh"])("splits a known %s suffix without truncating the base", (effort) => {
 		expect(splitEffortSuffix(`gemini-hyphenated-base-${effort}`)).toEqual({ base: "gemini-hyphenated-base", effort });
 	});
 
@@ -54,7 +69,7 @@ describe("projectModels", () => {
 		expect(resolveAcpModelId(models[1]!, "medium")).toBe("gemini-pro-agent");
 	});
 
-	it.each(["low", "medium", "high"] as const)("retains the only advertised %s reasoning tier without inventing variants", (effort) => {
+	it.each(["low", "medium", "high", "xhigh"] as const)("retains the only advertised %s reasoning tier without inventing variants", (effort) => {
 		const id = `gemini-4-argon-${effort}`;
 		const models = projectModels([{ modelId: id, name: `Gemini 4 Argon (${effort})` }]);
 		expect(models).toHaveLength(1);
@@ -77,6 +92,23 @@ describe("projectModels", () => {
 		expect(models[0]?.thinkingLevelMap?.low).toBeNull();
 		expect(resolveAcpModelId(models[0]!, "medium")).toBe("gemini-4-argon-medium");
 		expect(resolveAcpModelId(models[0]!, "high")).toBe("gemini-4-argon-high");
+	});
+
+	it("maps the extra-high tier only where the server advertises it", () => {
+		const models = projectModels([
+			{ modelId: "gemini-4-hydrogen-low", name: "Gemini 4 Hydrogen (Low)" },
+			{ modelId: "gemini-4-hydrogen-medium", name: "Gemini 4 Hydrogen (Medium)" },
+			{ modelId: "gemini-4-hydrogen-high", name: "Gemini 4 Hydrogen (High)" },
+			{ modelId: "gemini-4-hydrogen-xhigh", name: "Gemini 4 Hydrogen (XHigh)" },
+			{ modelId: "gemini-4-argon-high", name: "Gemini 4 Argon (Extra High)" },
+		]);
+		const hydrogen = models.find((model) => model.id === "gemini-4-hydrogen");
+		expect(hydrogen?.thinkingLevelMap?.xhigh).toBe("gemini-4-hydrogen-xhigh");
+		expect(resolveAcpModelId(hydrogen!, "xhigh")).toBe("gemini-4-hydrogen-xhigh");
+		// A family that advertises only one tier keeps its raw ACP id as the Pi id.
+		const argon = models.find((model) => model.id === "gemini-4-argon-high");
+		expect(argon?.thinkingLevelMap?.xhigh).toBe("gemini-4-argon-high");
+		expect(resolveAcpModelId(argon!, "xhigh")).toBe("gemini-4-argon-high");
 	});
 
 	it("does not infer reasoning for a model without an advertised effort", () => {
