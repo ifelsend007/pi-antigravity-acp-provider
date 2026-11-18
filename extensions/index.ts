@@ -29,6 +29,7 @@ import {
 	QUOTA_REQUEST_CHANNEL,
 } from "../src/constants.js";
 import type { AntigravityQuotaSnapshot } from "../src/acp/usage-quota.js";
+import { projectModels } from "../src/models.js";
 import {
 	PERMISSION_RESULT_KIND,
 	PERMISSION_TOOL_NAME,
@@ -153,6 +154,31 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 				);
 				return;
 			}
+			if (command === "models") {
+				// Show what the account's ACP session really advertises: the catalog is
+				// discovered, never hardcoded, so this is the authority on why a model
+				// the user expects is missing.
+				const advertised = await runtime.discoverModels(undefined).then(
+					(value) => value,
+					(error: unknown) => errorMessage(error),
+				);
+				if (typeof advertised === "string") {
+					ctx.ui.notify(`Antigravity models: discovery failed (${advertised})`, "warning");
+					return;
+				}
+				const projected = projectModels(advertised);
+				ctx.ui.notify(
+					[
+						`Antigravity models: ${projected.length} for Pi from ${advertised.length} advertised ids`,
+						...projected.map(
+							(model) => `• ${model.id}${model.reasoning ? " (reasoning)" : ""} — ${model.name}`,
+						),
+						`Raw ACP ids: ${advertised.map((model) => model.modelId).join(", ") || "none"}`,
+					].join("\n"),
+					"info",
+				);
+				return;
+			}
 			if (command === "quota") {
 				const quota = await runtime.quota(undefined).then(
 					formatQuota,
@@ -198,7 +224,7 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 			const verbose = command === "doctor --verbose";
 			if (command !== "doctor" && command !== "status" && !verbose) {
 				ctx.ui.notify(
-					"Usage: /antigravity-acp [setup|doctor|status|quota|update|updates|logout|account|qualify|permissions]",
+					"Usage: /antigravity-acp [setup|doctor|status|models|quota|update|updates|logout|account|qualify|permissions]",
 					"warning",
 				);
 				return;

@@ -30,7 +30,7 @@ The provider appears in Pi's `/login` UI. The flow reads `initialize.authMethods
 
 ### R4 — Correct model semantics
 
-The initial fallback catalog is usable offline. After authenticated ACP discovery, publish `availableModels` from `session/new` through Pi's model-refresh mechanism. Before every prompt, verify the binding's active model equals `model.id`; call the negotiated ACP model-control method when needed and reject unsupported ids visibly. Do not claim that a prompt preamble or persisted `--model` preference changed the running session.
+The provider lists whatever the pinned ACP server advertises and persists that inventory as last-known-good, so the built-in list is only a first-run bootstrap and no release is needed when Google adds a model. After authenticated ACP discovery, publish `availableModels` from `session/new` through Pi's model-refresh mechanism. Before every prompt, verify the binding's active model equals `model.id`; call the negotiated ACP model-control method when needed and reject unsupported ids visibly. Do not claim that a prompt preamble or persisted `--model` preference changed the running session.
 
 **Acceptance:** selecting two distinct Pi models yields corresponding ACP model-change calls and diagnostics show the effective model. Unknown or revoked models fail safely or fall back only with an explicit message.
 

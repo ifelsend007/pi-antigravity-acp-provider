@@ -12,6 +12,9 @@ const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 type Effort = "low" | "medium" | "high";
 type Variants = Partial<Record<Effort, string>>;
 
+// Bootstrap only: used for the first start before any discovery succeeded. The
+// live catalog is whatever `session/new` advertises and is cached on disk
+// afterwards, so this list must not try to predict future Google releases.
 // Keep the broadly available Flash model first for offline/default selection.
 export const FALLBACK_MODELS: readonly Model<typeof API_ID>[] = [
 	reasoningModel("gemini-3.8-flash", "Gemini 3.8 Flash", {
@@ -28,20 +31,6 @@ export const FALLBACK_MODELS: readonly Model<typeof API_ID>[] = [
 		low: "gemini-4-hydrogen-low",
 		medium: "gemini-4-hydrogen-medium",
 		high: "gemini-4-hydrogen-high",
-	}),
-	reasoningModel("gemini-3.7-flash", "Gemini 3.7 Flash", {
-		low: "gemini-3.7-flash-low",
-		medium: "gemini-3.7-flash-medium",
-		high: "gemini-3.7-flash-high",
-	}),
-	reasoningModel("gemini-3.6-flash", "Gemini 3.6 Flash", {
-		low: "gemini-3.6-flash-low",
-		medium: "gemini-3.6-flash-medium",
-		high: "gemini-3.6-flash-high",
-	}),
-	reasoningModel("gemini-3.1-pro", "Gemini 3.1 Pro", {
-		low: "gemini-3.1-pro-low",
-		high: "gemini-pro-agent",
 	}),
 ];
 

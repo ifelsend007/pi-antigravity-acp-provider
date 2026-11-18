@@ -18,7 +18,8 @@ extensions/
   index.ts                    # minimal Pi registration + lifecycle wiring
 src/
   provider.ts                 # complete pi-ai Provider factory
-  models.ts                   # fallback catalog + ACP projection
+  models.ts                   # ACP projection + first-run bootstrap catalog
+  model-cache.ts              # persisted last-known-good advertised catalog
   auth.ts                     # Pi /login adapter to ACP authenticate
   stream/
     stream.ts                 # required Provider.stream adapter; delegates to shared coordinator
@@ -129,7 +130,7 @@ All deadline timers use `unref` where possible. User login and permission UI hav
 
 ## 4. Startup and model publication
 
-Do not spawn during extension load. `getModels()` immediately returns a conservative fallback catalog, including Gemini's `auto` alias and known stable ids validated for the pinned CLI. Mark image input according to pinned capabilities, reasoning only when thought output is supported, zero dollar costs, and conservative context/output metadata.
+Do not spawn during extension load. `getModels()` returns the last catalog the server advertised, read from `models-cache.json` in the provider config root; only a machine that has never completed discovery falls back to the built-in bootstrap list, which keeps the known stable ids validated for the pinned CLI. Mark image input according to pinned capabilities, reasoning only when thought output is supported, zero dollar costs, and conservative context/output metadata. A successful discovery rewrites the cache with the raw advertised ids, so projection changes never require a release and a later offline start still lists real models.
 
 On explicit Pi model refresh, after login, or lazy first use:
 
