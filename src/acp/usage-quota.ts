@@ -13,7 +13,10 @@ const RESET = new RegExp(`^(${MONTHS.join("|")}) (\\d{1,2}), (\\d{4}), (\\d{2}):
 
 /** Parses the Quota Limits section of agy's `/usage` reply; buckets reported as units or Available carry no fraction and are skipped. */
 export function parseUsageQuota(text: string, now = Date.now()): AntigravityQuotaSnapshot {
-	const section = /^### Quota Limits$([\s\S]*?)(?=^### |(?![\s\S]))/mu.exec(text)?.[1] ?? "";
+	// A CRLF reply leaves a trailing carriage return on every line, which defeats
+	// the line anchors below.
+	const section =
+		/^### Quota Limits$([\s\S]*?)(?=^### |(?![\s\S]))/mu.exec(text.replace(/\r\n?/gu, "\n"))?.[1] ?? "";
 	const groups: AntigravityQuotaSnapshot["groups"] = [];
 	let notice: string | undefined;
 	for (const line of section.split("\n")) {

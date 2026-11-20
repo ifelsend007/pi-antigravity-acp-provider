@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 
 import {
 	clearAntigravityCredentials,
+	hasAntigravityAcpServer,
 	hasAntigravityCli,
 	inspectAntigravityAuth,
 	removeConversation,
@@ -288,13 +289,16 @@ export class AntigravityRuntime {
 	private async fetchQuota(apiKey: string | undefined): Promise<AntigravityQuotaSnapshot> {
 		this.assertActive();
 		const epoch = this.bindingEpoch;
-		if (this.ensureAgent) await ensureAntigravityAcpReady();
+		// Only the managed server answers `/usage`; the official CLI has no such
+		// command and would spend a real turn on the prompt instead.
+		if (this.ensureAgent || !hasAntigravityAcpServer()) await ensureAntigravityAcpReady();
 		this.assertEpoch(epoch);
 		let sessionId: string | undefined;
 		let text = "";
 		const cwd = process.cwd();
 		const connection = this.createConnection({
 			cwd,
+			transport: "server",
 			promptIdleTimeoutMs: QUOTA_TIMEOUT_MS,
 			handlers: {
 				onUpdate: ({ sessionId: id, update }) => {

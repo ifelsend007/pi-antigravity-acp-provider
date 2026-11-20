@@ -42,6 +42,16 @@ export function resolveAntigravityAcpLaunch(): AntigravityLaunch {
 	);
 }
 
+export function hasAntigravityAcpServer(): boolean {
+	try {
+		resolveAntigravityAcpLaunch();
+		return true;
+	} catch (error) {
+		if (error instanceof AntigravityAcpError) return false;
+		throw error;
+	}
+}
+
 export type AntigravityAuthStatus =
 	| "api-key-env"
 	| "oauth-refreshable"
