@@ -105,20 +105,18 @@ export function sessionModels(state: SessionState): { currentModelId: string; av
 			);
 			// Only IDs this session actually offers survive: either a selector value
 			// (models without an effort axis) or a real model/effort pair.
-			const knownIds = new Set([
-				...modelOptions.map((option) => option.value),
-				...synthesized.map((model) => model.modelId),
-			]);
-			const usableAdvertised = advertised !== undefined && isCompleteInventory(advertised, knownIds, 2);
-			if (usableAdvertised) return { currentModelId, availableModels: advertised };
-			// Live selectors are authoritative; retain legacy labels only for the
-			// same complete, duplicate-free inventory.
-			const isLegacyCompatible =
-				advertised !== undefined && isCompleteInventory(advertised, knownIds, synthesized.length);
+			const synthesizedIds = new Set(synthesized.map((model) => model.modelId));
+			const knownIds = new Set([...modelOptions.map((option) => option.value), ...synthesizedIds]);
+			// A list of bare model ids means the server never expanded the effort
+			// axis, so trusting it would drop every thinking tier.
+			const usableAdvertised =
+				advertised !== undefined &&
+				isCompleteInventory(advertised, knownIds, 2) &&
+				advertised.some((model) => synthesizedIds.has(model.modelId));
 
 			return {
 				currentModelId,
-				availableModels: isLegacyCompatible ? advertised : synthesized,
+				availableModels: usableAdvertised ? advertised : synthesized,
 			};
 		}
 	}

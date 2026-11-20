@@ -120,6 +120,48 @@ describe("ACP session compatibility", () => {
 		});
 	});
 
+	it("ignores a base-only inventory that never expanded the effort axis", () => {
+		const state = decodeSessionState({
+			models: {
+				currentModelId: "gemini-3.8-flash",
+				availableModels: [
+					{ modelId: "gemini-3.8-flash", name: "Gemini 3.8 Flash" },
+					{ modelId: "gemini-4-argon", name: "Gemini 4 Argon" },
+				],
+			},
+			configOptions: [
+				{
+					id: "model",
+					name: "Model",
+					category: "model",
+					type: "select",
+					currentValue: "gemini-3.8-flash",
+					options: [
+						{ value: "gemini-3.8-flash", name: "Gemini 3.8 Flash" },
+						{ value: "gemini-4-argon", name: "Gemini 4 Argon" },
+					],
+				},
+				{
+					id: "thought_level",
+					name: "Thinking Level",
+					category: "thought_level",
+					type: "select",
+					currentValue: "high",
+					options: [
+						{ value: "low", name: "Low" },
+						{ value: "high", name: "High" },
+					],
+				},
+			],
+		});
+		expect(sessionModels(state)?.availableModels.map((model) => model.modelId)).toEqual([
+			"gemini-3.8-flash-low",
+			"gemini-3.8-flash-high",
+			"gemini-4-argon-low",
+			"gemini-4-argon-high",
+		]);
+	});
+
 	it("drops an advertised inventory that names pairs the selectors never offered", () => {
 		const state = decodeSessionState({
 			models: {
