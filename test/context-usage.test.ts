@@ -26,7 +26,7 @@ describe("prompt context", () => {
 		};
 		const fresh = buildPromptParts(context, true);
 		const warm = buildPromptParts(context, false);
-		expect(fresh.prompt).toHaveLength(2);
+		expect(fresh.prompt).toHaveLength(3);
 		expect(fresh.prompt[0]?.type).toBe("resource");
 		expect(warm.prompt).toEqual([{ type: "text", text: "new" }]);
 	});
@@ -83,7 +83,7 @@ describe("prompt context", () => {
 		expect(block.resource.text).not.toContain("Old rules");
 		expect(block.resource.text).not.toContain("Obsolete");
 		expect(block.resource.text).not.toContain("Tool result (undefined");
-		expect(result.prompt[1]).toEqual({ type: "text", text: "new" });
+		expect(result.prompt.slice(1)).toEqual([{ type: "text", text: "\n\n---\n\n# Current Pi user request" }, { type: "text", text: "new" }]);
 	});
 
 	it("adds only unseen external deltas to a warm prompt", () => {
@@ -95,12 +95,12 @@ describe("prompt context", () => {
 			],
 		};
 		const result = buildPromptParts(context, false, 1);
-		expect(result.prompt).toHaveLength(2);
+		expect(result.prompt).toHaveLength(3);
 		expect(result.prompt[0]).toMatchObject({
 			type: "resource",
 			resource: { text: expect.stringContaining("externally inserted") },
 		});
-		expect(result.prompt[1]).toEqual({ type: "text", text: "current" });
+		expect(result.prompt.slice(1)).toEqual([{ type: "text", text: "\n\n---\n\n# Current Pi user request" }, { type: "text", text: "current" }]);
 	});
 });
 
@@ -140,7 +140,47 @@ describe("usageFromPrompt", () => {
 		expect(usage).toMatchObject({ input: 11, output: 5, totalTokens: 16 });
 	});
 
-	it("maps standard ACP cache and thought counters", () => {
+	it("maps ACP 1.5.0 usage without double-adding thoughtTokens or clamping net input", () => {
+		const turn1 = usageFromPrompt({
+			stopReason: "end_turn",
+			usage: {
+				inputTokens: 18918,
+				outputTokens: 150,
+				cachedReadTokens: 0,
+				thoughtTokens: 145,
+				totalTokens: 19068,
+			},
+		});
+		expect(turn1).toMatchObject({
+			input: 18918,
+			output: 150,
+			reasoning: 145,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 19068,
+		});
+
+		const multiInference = usageFromPrompt({
+			stopReason: "end_turn",
+			usage: {
+				inputTokens: 2506,
+				outputTokens: 300,
+				cachedReadTokens: 16877,
+				thoughtTokens: 100,
+				totalTokens: 19683,
+			},
+		});
+		expect(multiInference).toMatchObject({
+			input: 2506,
+			output: 300,
+			reasoning: 100,
+			cacheRead: 16877,
+			cacheWrite: 0,
+			totalTokens: 19683,
+		});
+	});
+
+	it("maps standard ACP cache and thought counters consistently with totalTokens", () => {
 		const usage = usageFromPrompt({
 			stopReason: "end_turn",
 			usage: {
@@ -153,12 +193,12 @@ describe("usageFromPrompt", () => {
 			},
 		});
 		expect(usage).toMatchObject({
-			input: 15,
-			output: 11,
+			input: 13,
+			output: 8,
 			cacheRead: 5,
 			cacheWrite: 2,
 			reasoning: 3,
-			totalTokens: 33,
+			totalTokens: 28,
 		});
 	});
 
@@ -168,6 +208,25 @@ describe("usageFromPrompt", () => {
 			usage: { inputTokens: 128638, cachedReadTokens: 79242, outputTokens: 219, thoughtTokens: 12249, totalTokens: 141106 },
 		});
 		expect(usage).toMatchObject({ input: 49396, cacheRead: 79242, output: 12468, reasoning: 12249, totalTokens: 141106 });
+	});
+
+	it("never clamps net input to zero when totalTokens is omitted", () => {
+		const usage = usageFromPrompt({
+			stopReason: "end_turn",
+			usage: {
+				inputTokens: 500,
+				cachedReadTokens: 1200,
+				outputTokens: 80,
+				thoughtTokens: 50,
+			} as unknown as NonNullable<Parameters<typeof usageFromPrompt>[0]["usage"]>,
+		});
+		expect(usage).toMatchObject({
+			input: 500,
+			cacheRead: 1200,
+			output: 80,
+			reasoning: 50,
+			totalTokens: 1780,
+		});
 	});
 
 	it("extracts quota metadata when the server supplies it", () => {

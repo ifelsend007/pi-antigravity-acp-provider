@@ -4,11 +4,12 @@ import path from "node:path";
 
 export type PermissionMode = "default" | "auto_edit" | "yolo";
 export type RuntimeUpdateMode = "automatic" | "notify" | "manual";
-export type ToolActivityMode = "off" | "transcript";
+export type ToolActivityMode = "off" | "compact" | "full";
 
 export interface AntigravityAcpConfig {
 	permissions: PermissionMode;
 	runtimeUpdates: RuntimeUpdateMode;
+	toolActivity: ToolActivityMode;
 }
 
 export function resolvePiAgentDir(): string {
@@ -44,11 +45,21 @@ export const CONFIG_PATH = resolveConfigPath();
 
 export function loadConfig(file = resolveConfigPath()): AntigravityAcpConfig {
 	if (file === resolveConfigPath()) migrateConfig(file);
-	const parsed = readConfigFile(file);
-	return {
-		permissions: isPermissionMode(parsed.permissions) ? parsed.permissions : "yolo",
-		runtimeUpdates: isRuntimeUpdateMode(parsed.runtimeUpdates) ? parsed.runtimeUpdates : "automatic",
-	};
+	try {
+		const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as {
+			permissions?: unknown;
+			runtimeUpdates?: unknown;
+			toolActivity?: unknown;
+		};
+		return {
+			permissions: isPermissionMode(parsed.permissions) ? parsed.permissions : "yolo",
+			runtimeUpdates: isRuntimeUpdateMode(parsed.runtimeUpdates) ? parsed.runtimeUpdates : "automatic",
+			toolActivity: isToolActivityMode(parsed.toolActivity) ? parsed.toolActivity : "off",
+		};
+	} catch {
+		// Missing or malformed configuration uses the documented defaults.
+	}
+	return { permissions: "yolo", runtimeUpdates: "automatic", toolActivity: "off" };
 }
 
 /** Directory the Antigravity server unpacks itself into, when the user picked
@@ -59,12 +70,6 @@ export function loadLaunchTempRoot(file = resolveConfigPath()): string | null {
 	return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-/** Antigravity's ACP stream carries no thought content of its own, so tool
- * activity can only be interleaved into the thinking block or dropped. Dropped
- * by default: the thinking block is then empty rather than full of tool logs. */
-export function loadToolActivity(file = resolveConfigPath()): ToolActivityMode {
-	return readConfigFile(file).toolActivity === "transcript" ? "transcript" : "off";
-}
 
 export function savePermissionMode(mode: PermissionMode, file = resolveConfigPath()): void {
 	writeConfig({ ...loadConfig(file), permissions: mode }, file);
@@ -72,6 +77,10 @@ export function savePermissionMode(mode: PermissionMode, file = resolveConfigPat
 
 export function saveRuntimeUpdateMode(mode: RuntimeUpdateMode, file = resolveConfigPath()): void {
 	writeConfig({ ...loadConfig(file), runtimeUpdates: mode }, file);
+}
+
+export function saveToolActivityMode(mode: ToolActivityMode, file = resolveConfigPath()): void {
+	writeConfig({ ...loadConfig(file), toolActivity: mode }, file);
 }
 
 function writeConfig(config: AntigravityAcpConfig, file: string): void {
@@ -127,6 +136,10 @@ export function isPermissionMode(value: unknown): value is PermissionMode {
 
 export function isRuntimeUpdateMode(value: unknown): value is RuntimeUpdateMode {
 	return value === "automatic" || value === "notify" || value === "manual";
+}
+
+export function isToolActivityMode(value: unknown): value is ToolActivityMode {
+	return value === "off" || value === "compact" || value === "full";
 }
 
 export function permissionModeLabel(mode: PermissionMode): string {

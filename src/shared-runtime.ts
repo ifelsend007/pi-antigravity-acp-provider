@@ -1,7 +1,7 @@
 import type { Provider } from "@earendil-works/pi-ai";
 
 import { configuredLaunchTempRoot, defaultLaunchTempRoot, sweepLaunchTemps } from "./acp/launch-temp.js";
-import { loadConfig, loadToolActivity } from "./config.js";
+import { loadConfig } from "./config.js";
 import { PACKAGE_VERSION } from "./constants.js";
 import { createAntigravityProvider } from "./provider.js";
 import { AntigravityRuntime, type AntigravityConnectionFactory } from "./runtime.js";
@@ -22,7 +22,10 @@ export function acquireSharedRuntime(connectionFactory?: AntigravityConnectionFa
 	if (shared?.version !== PACKAGE_VERSION) {
 		// A different package version never shares; an unreferenced old stack would otherwise leak.
 		if (shared && shared.refs === 0) void shared.runtime.close();
-		const runtime = new AntigravityRuntime(connectionFactory, loadConfig().permissions, undefined, loadToolActivity());
+		const config = loadConfig();
+		const runtime = new AntigravityRuntime(connectionFactory, config.permissions, undefined, {
+			toolActivityMode: config.toolActivity,
+		});
 		// Startup is the only safe moment to reclaim launch directories whose
 		// owning processes are gone; a running server needs its unpacked runtime.
 		sweepLaunchTemps();

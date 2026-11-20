@@ -12,9 +12,37 @@ const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 type Effort = "low" | "medium" | "high" | "xhigh";
 type Variants = Partial<Record<Effort, string>>;
 
-// Bootstrap only: used for the first start before any discovery succeeded. The
-// live catalog is whatever `session/new` advertises and is cached on disk
-// afterwards, so this list must not try to predict future Google releases.
+/** Catalog rates in USD per million tokens. Flash / Argon / Carbon / Pro entries
+ * match models.dev's Google / Vertex entries (retrieved 2026-11-11); Hydrogen
+ * matches Google's published paid-tier pricing from its 2026-11-12 launch (not
+ * yet in models.dev). Antigravity bills through a subscription, so these produce
+ * a reference estimate rather than a billed amount — the same estimate OpenCode
+ * shows for the same models. Unknown model families keep zero rates instead of
+ * guessing. */
+const FLASH_RATES: Model<typeof API_ID>["cost"] = { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0 };
+const ARGON_RATES: Model<typeof API_ID>["cost"] = { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0 };
+const CARBON_RATES: Model<typeof API_ID>["cost"] = { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0 };
+const HYDROGEN_RATES: Model<typeof API_ID>["cost"] = { input: 1.5, output: 7.5, cacheRead: 0.075, cacheWrite: 0 };
+const PRO_RATES = {
+	input: 2,
+	output: 12,
+	cacheRead: 0.2,
+	cacheWrite: 0,
+	tiers: [{ input: 4, output: 18, cacheRead: 0.4, cacheWrite: 0, inputTokensAbove: 200_000 }],
+};
+
+/** Resolve the catalog rates for a projected model id. Effort-qualified ids share the
+ * base model's rates, and `gemini-pro-agent` is Gemini 3.1 Pro under its agent name. */
+export function costRatesFor(modelId: string): Model<typeof API_ID>["cost"] {
+	const base = splitEffortSuffix(modelId)?.base ?? modelId;
+	if (/^gemini-3\.[678]-flash$/u.test(base)) return FLASH_RATES;
+	if (/^gemini-4-hydrogen$/u.test(base)) return HYDROGEN_RATES;
+	if (/^gemini-4-argon$/u.test(base)) return ARGON_RATES;
+	if (/^gemini-4-carbon$/u.test(base)) return CARBON_RATES;
+	if (/^(gemini-3\.1-pro|gemini-pro-agent)$/u.test(base)) return PRO_RATES;
+	return ZERO_COST;
+}
+
 // Keep the broadly available Flash model first for offline/default selection.
 export const FALLBACK_MODELS: readonly Model<typeof API_ID>[] = [
 	reasoningModel("gemini-3.8-flash", "Gemini 3.8 Flash", {
@@ -22,16 +50,35 @@ export const FALLBACK_MODELS: readonly Model<typeof API_ID>[] = [
 		medium: "gemini-3.8-flash-medium",
 		high: "gemini-3.8-flash-high",
 	}),
-	reasoningModel("gemini-4-argon", "Gemini 4 Argon", {
-		low: "gemini-4-argon-low",
-		medium: "gemini-4-argon-medium",
-		high: "gemini-4-argon-high",
-	}),
 	reasoningModel("gemini-4-hydrogen", "Gemini 4 Hydrogen", {
 		low: "gemini-4-hydrogen-low",
 		medium: "gemini-4-hydrogen-medium",
 		high: "gemini-4-hydrogen-high",
 		xhigh: "gemini-4-hydrogen-xhigh",
+	}),
+	reasoningModel("gemini-4-argon", "Gemini 4 Argon", {
+		low: "gemini-4-argon-low",
+		medium: "gemini-4-argon-medium",
+		high: "gemini-4-argon-high",
+	}),
+	reasoningModel("gemini-4-carbon", "Gemini 4 Carbon", {
+		low: "gemini-4-carbon-low",
+		medium: "gemini-4-carbon-medium",
+		high: "gemini-4-carbon-high",
+	}),
+	reasoningModel("gemini-3.7-flash", "Gemini 3.7 Flash", {
+		low: "gemini-3.7-flash-low",
+		medium: "gemini-3.7-flash-medium",
+		high: "gemini-3.7-flash-high",
+	}),
+	reasoningModel("gemini-3.6-flash", "Gemini 3.6 Flash", {
+		low: "gemini-3.6-flash-low",
+		medium: "gemini-3.6-flash-medium",
+		high: "gemini-3.6-flash-high",
+	}),
+	reasoningModel("gemini-3.1-pro", "Gemini 3.1 Pro", {
+		low: "gemini-3.1-pro-low",
+		high: "gemini-pro-agent",
 	}),
 ];
 
@@ -86,11 +133,43 @@ export function projectModels(models: readonly AcpModelInfo[]): Model<typeof API
 	return projected;
 }
 
+/** Rebuild a catalog persisted by an earlier discovery. Entries are rebuilt from
+ * their id, name and advertised tiers rather than trusted verbatim, so current
+ * cost rates and model limits apply and malformed or foreign entries are skipped. */
+export function restoreModels(stored: readonly unknown[]): Model<typeof API_ID>[] {
+	const restored: Model<typeof API_ID>[] = [];
+	const ids = new Set<string>();
+	for (const entry of stored) {
+		if (!entry || typeof entry !== "object") continue;
+		const candidate = entry as Partial<Model<typeof API_ID>>;
+		if (candidate.provider !== PROVIDER_ID || candidate.api !== API_ID) continue;
+		const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+		if (!validModelId(id) || ids.has(id)) continue;
+		const name = typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim() : id;
+		if (candidate.reasoning === true) {
+			const variants: Variants = {};
+			for (const effort of ["low", "medium", "high", "xhigh"] as const) {
+				const value = candidate.thinkingLevelMap?.[effort];
+				if (typeof value === "string" && validModelId(value)) variants[effort] = value;
+			}
+			if (Object.keys(variants).length === 0) continue;
+			restored.push(reasoningModel(id, name, variants));
+		} else if (candidate.reasoning === false) {
+			restored.push(fixedModel(id, name));
+		} else {
+			continue;
+		}
+		ids.add(id);
+	}
+	return restored;
+}
+
 export type ModelEffort = "low" | "medium" | "high" | "xhigh";
 
 /** Antigravity advertises effort-qualified ids (`gemini-3.8-flash-high`) while the
  * server's `model` config option takes only the base id and keeps the tier on a
- * selector of its own, so a qualified id has to be split before it is sent. */
+ * selector of its own, so a qualified id has to be split before it is sent.
+ * Gemini 4 Hydrogen adds an `xhigh` tier. */
 export function splitEffortSuffix(modelId: string): { base: string; effort: ModelEffort } | undefined {
 	const match = /^(.*)-(low|medium|high|xhigh)$/u.exec(modelId);
 	if (!match?.[1]) return undefined;
@@ -105,22 +184,22 @@ export function resolveAcpModelId(
 ): string {
 	const map = model.thinkingLevelMap;
 	if (!model.reasoning || !map) return model.id;
-	const preferred: ModelEffort =
+	const preferred: Effort =
 		reasoning === "minimal" || reasoning === "low"
 			? "low"
-			: reasoning === "medium"
-				? "medium"
-				: reasoning === "xhigh" || reasoning === "max"
-					? "xhigh"
-					: "high";
-	const order: ModelEffort[] =
+			: reasoning === "xhigh" || reasoning === "max"
+				? "xhigh"
+				: reasoning === "high"
+					? "high"
+					: "medium";
+	const order: Effort[] =
 		preferred === "low"
-			? ["low", "medium", "high", "xhigh"]
-			: preferred === "medium"
-				? ["medium", "high", "low", "xhigh"]
+			? ["low", "medium", "high"]
+			: preferred === "xhigh"
+				? ["xhigh", "high", "medium", "low"]
 				: preferred === "high"
-					? ["high", "medium", "low", "xhigh"]
-					: ["xhigh", "high", "medium", "low"];
+					? ["high", "medium", "low"]
+					: ["medium", "high", "low"];
 	for (const effort of order) {
 		const value = map[effort];
 		if (typeof value === "string" && value) return value;
@@ -164,20 +243,16 @@ function baseModel(
 		reasoning,
 		...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 		input: ["text", "image"],
-		cost: ZERO_COST,
+		cost: costRatesFor(id),
 		contextWindow: 1_000_000,
 		maxTokens: 65_536,
 	};
 }
 
 function effortFromName(name: string): { baseName: string; effort: Effort } | undefined {
-	const match = name.trim().match(/^(.+?)\s*\((low|medium|high|xhigh|extra[\s-]?high)\)$/iu);
+	const match = name.trim().match(/^(.+?)\s*\((low|medium|high|xhigh)\)$/iu);
 	if (!match?.[1] || !match[2]) return undefined;
-	const label = match[2].toLowerCase();
-	return {
-		baseName: match[1].trim(),
-		effort: label.startsWith("extra") ? "xhigh" : (label as Effort),
-	};
+	return { baseName: match[1].trim(), effort: match[2].toLowerCase() as Effort };
 }
 
 function effortFromId(id: string): { baseName: string; effort: Effort } | undefined {

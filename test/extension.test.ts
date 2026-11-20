@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AntigravityAcpConnection } from "../src/acp/connection.js";
 import { AntigravityAcpError } from "../src/acp/errors.js";
+import type { AcpModelInfo } from "../src/acp/session-state.js";
 import { parseUsageQuota } from "../src/acp/usage-quota.js";
 import { QUOTA_REQUEST_CHANNEL } from "../src/constants.js";
 import { PERMISSION_TOOL_NAME } from "../src/runtime.js";
@@ -150,6 +151,96 @@ describe("extension entry point", () => {
 		expect(ctx.ui.notify.mock.calls.at(-1)![0]).toContain(
 			"Usage this process: turns=1 tokens=1200 input=600 output=200 reasoning=50 cacheRead=400",
 		);
+	});
+
+	it("configures tool-activity via command arguments, interactive selector, and doctor output", async () => {
+		const { pi, ctx } = await load("parent");
+		const { loadConfig } = await import("../src/config.js");
+		const command = pi.commands.get("antigravity-acp")!;
+
+		expect(loadConfig().toolActivity).toBe("off");
+
+		await command.handler("tool-activity off", ctx as never);
+		expect(loadConfig().toolActivity).toBe("off");
+		expect(ctx.ui.notify.mock.calls.at(-1)).toEqual(["Antigravity tool activity: off", "info"]);
+
+		const offTurn = await stream([user("emit tool activity")], "parent");
+		const offThinking = offTurn.content.filter((b) => b.type === "thinking").map((b) => b.thinking).join("\n");
+		expect(offThinking).not.toContain("[Antigravity tool:");
+
+		const selectCtx = createFakeContext({
+			sessionId: "parent",
+			cwd: root,
+			selectAnswer: (labels) => labels.find((label) => label.startsWith("full ")),
+		});
+		await command.handler("tool-activity", selectCtx as never);
+		expect(loadConfig().toolActivity).toBe("full");
+
+		const fullTurn = await stream([user("emit tool activity", 2)], "parent");
+		const fullThinking = fullTurn.content.filter((b) => b.type === "thinking").map((b) => b.thinking).join("\n");
+		expect(fullThinking).toContain("[Antigravity tool: pi_echo — in_progress]");
+		expect(fullThinking).toContain("[Antigravity tool update: tc-1 — completed]");
+
+		await command.handler("tool-activity invalid", ctx as never);
+		expect(ctx.ui.notify.mock.calls.at(-1)).toEqual([
+			"Usage: /antigravity-acp tool-activity [off|compact|full]",
+			"warning",
+		]);
+
+		await command.handler("doctor", ctx as never);
+		expect(ctx.ui.notify.mock.calls.at(-1)![0]).toContain("Tool activity mode: full");
+	});
+
+	it("preserves existing updates and permissions subcommand behavior alongside tool-activity", async () => {
+		const { pi, ctx } = await load("parent");
+		const { loadConfig } = await import("../src/config.js");
+		const command = pi.commands.get("antigravity-acp")!;
+
+		await command.handler("tool-activity off", ctx as never);
+		await command.handler("updates notify", ctx as never);
+		expect(ctx.ui.notify.mock.calls.at(-1)).toEqual(["Antigravity runtime updates: notify", "info"]);
+		await command.handler("permissions auto-edit", ctx as never);
+		expect(ctx.ui.notify.mock.calls.at(-1)).toEqual(["Antigravity permission mode: auto-edit.", "info"]);
+		expect(loadConfig()).toEqual({ permissions: "auto_edit", runtimeUpdates: "notify", toolActivity: "off" });
+	});
+});
+
+describe("model catalog command", () => {
+	async function runModels(discovery: { models: AcpModelInfo[] } | { error: unknown }) {
+		const { pi, ctx } = await load("parent");
+		const { AntigravityRuntime } = await import("../src/runtime.js");
+		const spy = vi.spyOn(AntigravityRuntime.prototype, "discoverModels");
+		if ("error" in discovery) spy.mockRejectedValue(discovery.error);
+		else spy.mockResolvedValue(discovery.models);
+		await pi.commands.get("antigravity-acp")!.handler("models", ctx as never);
+		return { spy, ctx };
+	}
+
+	it("prints the projected catalog next to the raw advertised ids", async () => {
+		const { spy, ctx } = await runModels({
+			models: [
+				{ modelId: "gemini-4-hydrogen-low", name: "Gemini 4 Hydrogen (Low)" },
+				{ modelId: "gemini-4-hydrogen-high", name: "Gemini 4 Hydrogen (High)" },
+				{ modelId: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)" },
+			],
+		});
+		expect(spy).toHaveBeenCalledOnce();
+		const [message, level] = ctx.ui.notify.mock.calls.at(-1)!;
+		expect(level).toBe("info");
+		expect(message).toContain("2 for Pi from 3 advertised ids");
+		expect(message).toContain("• gemini-4-hydrogen (reasoning)");
+		expect(message).toContain("• gemini-3.8-flash-low (reasoning)");
+		expect(message).toContain(
+			"Raw ACP ids: gemini-4-hydrogen-low, gemini-4-hydrogen-high, gemini-3.8-flash-low",
+		);
+	});
+
+	it("reports a discovery failure as a warning instead of throwing", async () => {
+		const { ctx } = await runModels({ error: new Error("server unreachable") });
+		expect(ctx.ui.notify.mock.calls.at(-1)).toEqual([
+			"Antigravity models: discovery failed (server unreachable)",
+			"warning",
+		]);
 	});
 });
 

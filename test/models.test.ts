@@ -1,39 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { FALLBACK_MODELS, projectModels, resolveAcpModelId, splitEffortSuffix } from "../src/models.js";
+import { FALLBACK_MODELS, projectModels, resolveAcpModelId, restoreModels, splitEffortSuffix } from "../src/models.js";
 import { createAntigravityProvider } from "../src/provider.js";
 
 describe("projectModels", () => {
-	it("keeps Flash as the conservative offline default", () => {
+	it("keeps Flash as the conservative offline default while allowing explicit Argon selection", () => {
 		expect(FALLBACK_MODELS[0]?.id).toBe("gemini-3.8-flash");
+		expect(FALLBACK_MODELS.some((model) => model.id === "gemini-4-argon")).toBe(true);
 	});
 
-	it.each([
-		["gemini-4-argon", ["low", "medium", "high"]],
-		["gemini-4-hydrogen", ["low", "medium", "high", "xhigh"]],
-	] as const)("exposes %s offline with every advertised ACP effort id", (id, efforts) => {
-		const model = FALLBACK_MODELS.find((candidate) => candidate.id === id);
-		expect(model?.thinkingLevelMap?.low).toBe(`${id}-low`);
-		expect(model?.thinkingLevelMap?.medium).toBe(`${id}-medium`);
-		expect(resolveAcpModelId(model!, "high")).toBe(`${id}-high`);
-		for (const level of ["low", "medium", "high", "xhigh"] as const) {
-			expect(model?.thinkingLevelMap?.[level]).toBe(
-				(efforts as readonly string[]).includes(level) ? `${id}-${level}` : null,
-			);
-		}
-		expect(model?.thinkingLevelMap?.max).toBeNull();
+	it("lists Carbon offline with the tiers the official ACP server advertises", () => {
+		const carbon = FALLBACK_MODELS.find((model) => model.id === "gemini-4-carbon");
+		expect(carbon).toMatchObject({
+			name: "Gemini 4 Carbon",
+			reasoning: true,
+			thinkingLevelMap: {
+				low: "gemini-4-carbon-low",
+				medium: "gemini-4-carbon-medium",
+				high: "gemini-4-carbon-high",
+				xhigh: null,
+			},
+		});
+		expect(carbon?.cost.input).toBe(2);
 	});
 
-	it("only Hydrogen accepts the extra-high tier", () => {
-		const hydrogen = FALLBACK_MODELS.find((candidate) => candidate.id === "gemini-4-hydrogen");
-		const argon = FALLBACK_MODELS.find((candidate) => candidate.id === "gemini-4-argon");
-		expect(resolveAcpModelId(hydrogen!, "xhigh")).toBe("gemini-4-hydrogen-xhigh");
-		expect(resolveAcpModelId(hydrogen!, "max")).toBe("gemini-4-hydrogen-xhigh");
-		expect(resolveAcpModelId(argon!, "xhigh")).toBe("gemini-4-argon-high");
-		expect(resolveAcpModelId(argon!, "max")).toBe("gemini-4-argon-high");
-	});
-
-	it.each(["low", "medium", "high", "xhigh"])("splits a known %s suffix without truncating the base", (effort) => {
+	it.each(["low", "medium", "high"])("splits a known %s suffix without truncating the base", (effort) => {
 		expect(splitEffortSuffix(`gemini-hyphenated-base-${effort}`)).toEqual({ base: "gemini-hyphenated-base", effort });
 	});
 
@@ -69,7 +60,7 @@ describe("projectModels", () => {
 		expect(resolveAcpModelId(models[1]!, "medium")).toBe("gemini-pro-agent");
 	});
 
-	it.each(["low", "medium", "high", "xhigh"] as const)("retains the only advertised %s reasoning tier without inventing variants", (effort) => {
+	it.each(["low", "medium", "high"] as const)("retains the only advertised %s reasoning tier without inventing variants", (effort) => {
 		const id = `gemini-4-argon-${effort}`;
 		const models = projectModels([{ modelId: id, name: `Gemini 4 Argon (${effort})` }]);
 		expect(models).toHaveLength(1);
@@ -94,23 +85,6 @@ describe("projectModels", () => {
 		expect(resolveAcpModelId(models[0]!, "high")).toBe("gemini-4-argon-high");
 	});
 
-	it("maps the extra-high tier only where the server advertises it", () => {
-		const models = projectModels([
-			{ modelId: "gemini-4-hydrogen-low", name: "Gemini 4 Hydrogen (Low)" },
-			{ modelId: "gemini-4-hydrogen-medium", name: "Gemini 4 Hydrogen (Medium)" },
-			{ modelId: "gemini-4-hydrogen-high", name: "Gemini 4 Hydrogen (High)" },
-			{ modelId: "gemini-4-hydrogen-xhigh", name: "Gemini 4 Hydrogen (XHigh)" },
-			{ modelId: "gemini-4-argon-high", name: "Gemini 4 Argon (Extra High)" },
-		]);
-		const hydrogen = models.find((model) => model.id === "gemini-4-hydrogen");
-		expect(hydrogen?.thinkingLevelMap?.xhigh).toBe("gemini-4-hydrogen-xhigh");
-		expect(resolveAcpModelId(hydrogen!, "xhigh")).toBe("gemini-4-hydrogen-xhigh");
-		// A family that advertises only one tier keeps its raw ACP id as the Pi id.
-		const argon = models.find((model) => model.id === "gemini-4-argon-high");
-		expect(argon?.thinkingLevelMap?.xhigh).toBe("gemini-4-argon-high");
-		expect(resolveAcpModelId(argon!, "xhigh")).toBe("gemini-4-argon-high");
-	});
-
 	it("does not infer reasoning for a model without an advertised effort", () => {
 		const models = projectModels([{ modelId: "gemini-unknown", name: "Gemini Unknown" }]);
 		expect(models[0]?.reasoning).toBe(false);
@@ -125,5 +99,46 @@ describe("projectModels", () => {
 		} finally {
 			await runtime.close();
 		}
+	});
+});
+
+describe("restoreModels", () => {
+	const discovered = projectModels([
+		{ modelId: "gemini-4-carbon-low", name: "Gemini 4 Carbon (Low)" },
+		{ modelId: "gemini-4-carbon-medium", name: "Gemini 4 Carbon (Medium)" },
+		{ modelId: "gemini-4-carbon-high", name: "Gemini 4 Carbon (High)" },
+		{ modelId: "gemini-next-preview", name: "Gemini Next Preview" },
+	]);
+
+	it("round-trips a discovered catalog through JSON persistence", () => {
+		const restored = restoreModels(JSON.parse(JSON.stringify(discovered)) as unknown[]);
+		expect(restored).toEqual(discovered);
+		expect(resolveAcpModelId(restored[0]!, "high")).toBe("gemini-4-carbon-high");
+		expect(restored[1]).toMatchObject({ id: "gemini-next-preview", reasoning: false });
+	});
+
+	it("rebuilds entries with current rates and limits instead of trusting stored values", () => {
+		const stale = { ...discovered[0]!, cost: { input: 99, output: 99, cacheRead: 99, cacheWrite: 99 }, contextWindow: 1 };
+		const [restored] = restoreModels([stale]);
+		expect(restored?.cost).toEqual(discovered[0]!.cost);
+		expect(restored?.contextWindow).toBe(discovered[0]!.contextWindow);
+	});
+
+	it("skips foreign, malformed, duplicate and tierless entries", () => {
+		const carbon = discovered[0]!;
+		const restored = restoreModels([
+			null,
+			"gemini-4-carbon",
+			{ ...carbon, provider: "google" },
+			{ ...carbon, api: "openai-completions" },
+			{ ...carbon, id: "bad\nmodel" },
+			{ ...carbon, id: 42 },
+			{ ...carbon, reasoning: undefined },
+			{ ...carbon, id: "gemini-tierless", thinkingLevelMap: { low: null, medium: null, high: null } },
+			{ ...carbon, id: "gemini-unsafe-tier", thinkingLevelMap: { low: "bad\ntier" } },
+			carbon,
+			{ ...carbon, name: "duplicate" },
+		]);
+		expect(restored).toEqual([carbon]);
 	});
 });

@@ -10,30 +10,16 @@ import type {
 } from "@earendil-works/pi-ai";
 
 import { hasAntigravityAuth } from "./acp/antigravity.js";
-import type { AcpModelInfo } from "./acp/session-state.js";
-import { readModelCache, writeModelCache } from "./model-cache.js";
-import { FALLBACK_MODELS, projectModels, PROVIDER_ID } from "./models.js";
+import { FALLBACK_MODELS, projectModels, PROVIDER_ID, restoreModels } from "./models.js";
 import { AntigravityRuntime, MANAGED_AUTH_MARKER } from "./runtime.js";
-
-export interface AntigravityProviderOptions {
-	/** Overrides the persisted last-known catalog; tests point this at a temp file. */
-	modelCachePath?: string;
-}
 
 export interface AntigravityProviderBundle {
 	provider: Provider<"antigravity-acp">;
 	runtime: AntigravityRuntime;
 }
 
-export function createAntigravityProvider(
-	runtime = new AntigravityRuntime(),
-	options: AntigravityProviderOptions = {},
-): AntigravityProviderBundle {
-	// Whatever the server last advertised beats any catalog written here: the
-	// only models worth listing are the ones `session/new` really returned.
-	const cached = projectModels(readModelCache(options.modelCachePath) ?? []);
-	let models = cached.length > 0 ? cached : [...FALLBACK_MODELS];
-	let discoveredInProcess = false;
+export function createAntigravityProvider(runtime = new AntigravityRuntime()): AntigravityProviderBundle {
+	let models = [...FALLBACK_MODELS];
 	const provider: Provider<"antigravity-acp"> = {
 		id: PROVIDER_ID,
 		name: "Google Antigravity (ACP)",
@@ -117,38 +103,37 @@ export function createAntigravityProvider(
 				},
 			},
 		},
-		getModels: () => {
-			// A concurrent Pi process may have refreshed the catalog since this one
-			// started; read it before falling back to the process-local copy.
-			if (!discoveredInProcess) {
-				const persisted = projectModels(readModelCache(options.modelCachePath) ?? []);
-				if (persisted.length > 0) models = persisted;
-			}
-			return models;
-		},
+		getModels: () => models,
 		async refreshModels(context: RefreshModelsContext) {
-			if (!context.allowNetwork) return;
+			if (!context.allowNetwork) {
+				// Restore the last discovered catalog before Pi resolves startup model
+				// patterns, so models outside the offline fallback stay selectable.
+				const restored = restoreModels(context.stored?.models ?? []);
+				if (restored.length === 0) return;
+				await context.publish({
+					update: () => {
+						models = restored;
+					},
+				});
+				return;
+			}
 			const key =
 				context.credential?.type === "api_key"
 					? context.credential.key
 					: context.credential?.type === "oauth"
 						? MANAGED_AUTH_MARKER
 						: undefined;
-			let advertised: AcpModelInfo[];
+			let discovered;
 			try {
-				advertised = await runtime.discoverModels(key, context.signal);
+				discovered = projectModels(await runtime.discoverModels(key, context.signal));
 			} catch {
-				// Startup refresh must not hide the last catalog when authentication is
-				// absent, expired, or temporarily unavailable.
+				// Startup refresh must not hide the conservative offline catalog when
+				// authentication is absent, expired, or temporarily unavailable.
 				return;
 			}
-			const discovered = projectModels(advertised);
 			if (discovered.length === 0) return;
-			// Cache the raw advertised ids so projection rules can change later,
-			// and so restarting without network still lists the real catalog.
-			writeModelCache(advertised, options.modelCachePath);
-			discoveredInProcess = true;
 			await context.publish({
+				persist: { models: discovered, checkedAt: Date.now() },
 				update: () => {
 					models = discovered;
 				},
