@@ -52,6 +52,22 @@ describe("Antigravity CLI discovery", () => {
 		});
 	});
 
+	it("expands a home-relative path and honours the requested platform", () => {
+		const file = path.join("/home/x", ".local", "bin", "agy");
+		const created = temporaryDirectory();
+		const real = path.join(created, "agy");
+		fs.writeFileSync(real, "#!/bin/sh");
+		fs.chmodSync(real, 0o755);
+		expect(antigravityCliCandidates({ cliPath: "~/.local/bin/agy", platform: "linux", home: "/home/x" })[0]).toEqual({
+			path: file,
+			source: "config cliPath",
+		});
+		expect(resolveAntigravityCli(real, { platform: "linux", env: {}, home: created })).toEqual({
+			path: real,
+			source: "config cliPath",
+		});
+	});
+
 	it.each([
 		{ config: { transport: "cli", cliPath: "D:/agy.exe" }, expected: { transport: "cli", cliPath: "D:/agy.exe" } },
 		{ config: { transport: "cli" }, expected: { transport: "cli", cliPath: null } },

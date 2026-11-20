@@ -9,8 +9,8 @@ import { resolveAntigravityAcpLaunch } from "./antigravity.js";
 import { resolveAntigravityCli } from "./cli.js";
 import { AntigravityAcpError, redact } from "./errors.js";
 import {
+	configuredLaunchTempRoot,
 	createLaunchTemp,
-	defaultLaunchTempRoot,
 	recordServerPid,
 	scheduleLaunchTempRemoval,
 	type LaunchTemp,
@@ -149,38 +149,9 @@ export class AntigravityProcess {
 	private closing?: Promise<void>;
 
 	constructor(options: AntigravityProcessOptions) {
-		let command: string;
-		let args: string[];
-		let launchTempFallback: string | undefined;
-		const transportConfig = loadTransport();
-		if (options.command) {
-			command = options.command;
-			args = options.args ?? [];
-		} else if (options.entryPath) {
-			const nodeBinary = resolveNodeBinary(options.env?.NODE, options.env ?? process.env);
-			command = nodeBinary;
-			args = [resolveSupervisorEntry(), "--command", nodeBinary, options.entryPath, ...(options.args ?? [])];
-		} else if ((options.transport ?? transportConfig.transport) === "cli") {
-			const cli = resolveAntigravityCli(options.cliPath ?? transportConfig.cliPath, {
-				env: options.env ?? process.env,
-			});
-			if (!cli) {
-				throw new AntigravityAcpError(
-					"spawn",
-					"Antigravity CLI (agy) was not found; install it or set cliPath in the plugin config",
-				);
-			}
-			command = cli.path;
-			args = ["acp"];
-			// The CLI is a PyInstaller bundle too; keep its unpacked files confined.
-			launchTempFallback = defaultLaunchTempRoot();
-		} else {
-			const nodeBinary = resolveNodeBinary(options.env?.NODE, options.env ?? process.env);
-			const launch = resolveAntigravityAcpLaunch();
-			command = nodeBinary;
-			args = [resolveSupervisorEntry(), "--command", launch.command, ...launch.args];
-		}
-		const launchTemp = resolveLaunchTemp(options, launchTempFallback);
+		const plan = planLaunch(options);
+		const { command, args } = plan;
+		const launchTemp = resolveLaunchTemp(options, plan.launchTempRoot);
 		let resolveExit!: (exit: ProcessExit) => void;
 		this.exited = new Promise((resolve) => {
 			resolveExit = resolve;
@@ -313,6 +284,48 @@ function delay(ms: number): Promise<void> {
 /** Only a real Antigravity launch gets the confined temp root; an explicit
  * command or entry path (fixtures, `AGY_ACP_BIN` wrappers in tests) keeps the
  * ambient environment unless a root is passed in. */
+/** Command line plus the implicit temp root for a launch, so the transport
+ * branches stay testable without spawning anything. */
+export interface LaunchPlan {
+	command: string;
+	args: string[];
+	launchTempRoot?: string;
+}
+
+export function planLaunch(options: AntigravityProcessOptions): LaunchPlan {
+	const env = options.env ?? process.env;
+	const transportConfig = loadTransport();
+	if (options.command) return { command: options.command, args: options.args ?? [] };
+	const nodeBinary = resolveNodeBinary(env.NODE, env);
+	if (options.entryPath) {
+		return {
+			command: nodeBinary,
+			args: [resolveSupervisorEntry(), "--command", nodeBinary, options.entryPath, ...(options.args ?? [])],
+		};
+	}
+	if ((options.transport ?? transportConfig.transport) === "cli") {
+		const cli = resolveAntigravityCli(options.cliPath ?? transportConfig.cliPath, { env });
+		if (!cli) {
+			throw new AntigravityAcpError(
+				"spawn",
+				"Antigravity CLI (agy) was not found; install it or set cliPath in the plugin config",
+			);
+		}
+		// The CLI is a PyInstaller bundle too, so its unpacked files need confining.
+		return {
+			command: nodeBinary,
+			args: [resolveSupervisorEntry(), "--command", cli.path, "acp"],
+			launchTempRoot: configuredLaunchTempRoot(),
+		};
+	}
+	const launch = resolveAntigravityAcpLaunch();
+	return {
+		command: nodeBinary,
+		args: [resolveSupervisorEntry(), "--command", launch.command, ...launch.args],
+		launchTempRoot: configuredLaunchTempRoot(),
+	};
+}
+
 function resolveLaunchTemp(
 	options: AntigravityProcessOptions,
 	fallbackRoot?: string,
