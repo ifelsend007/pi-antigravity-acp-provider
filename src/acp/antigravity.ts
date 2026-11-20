@@ -132,8 +132,19 @@ export function hasAntigravityAuth(): boolean {
 /** The official CLI keeps its credential in the OS keychain and refreshes it
  * itself, so the token files inspected above cannot see it. */
 export function hasAntigravityCli(): boolean {
+	return inspectAntigravityCliTransport().status === "cli-login";
+}
+
+export interface AntigravityCliTransportHealth {
+	status: "cli-login" | "cli-missing";
+	path?: string;
+}
+
+export function inspectAntigravityCliTransport(): AntigravityCliTransportHealth {
 	const config = loadTransport();
-	return config.transport === "cli" && resolveAntigravityCli(config.cliPath) !== undefined;
+	if (config.transport !== "cli") return { status: "cli-missing" };
+	const found = resolveAntigravityCli(config.cliPath);
+	return found ? { status: "cli-login", path: found.path } : { status: "cli-missing" };
 }
 
 /** Local logout. Google currently advertises logout as an agent command rather

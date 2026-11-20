@@ -205,6 +205,30 @@ describe("extension entry point", () => {
 	});
 });
 
+describe("status command transport reporting", () => {
+	it.each([
+		{ name: "a usable CLI", cli: true, expected: "Authentication: cli-login (OS keychain, managed by agy)" },
+		{ name: "a missing CLI", cli: false, expected: "Authentication: missing (run `agy acp --login`)" },
+	])("reports $name instead of the community server", async ({ cli, expected }) => {
+		const binary = path.join(root, "home", "agy.exe");
+		if (cli) fs.writeFileSync(binary, "");
+		const configDirectory = path.join(root, "agent", "antigravity-acp-provider");
+		fs.mkdirSync(configDirectory, { recursive: true });
+		fs.writeFileSync(
+			path.join(configDirectory, "config.json"),
+			JSON.stringify({ transport: "cli", cliPath: binary }),
+		);
+		const { pi, ctx } = await load("status");
+
+		await pi.commands.get("antigravity-acp")!.handler("status", ctx as never);
+
+		const text = ctx.ui.notify.mock.calls.at(-1)![0] as string;
+		expect(text).toContain("Transport: official Antigravity CLI");
+		expect(text).not.toContain("Antigravity server:");
+		expect(text).toContain(expected);
+	});
+});
+
 describe("model catalog command", () => {
 	async function runModels(discovery: { models: AcpModelInfo[] } | { error: unknown }) {
 		const { pi, ctx } = await load("parent");

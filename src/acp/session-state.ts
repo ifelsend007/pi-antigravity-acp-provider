@@ -95,18 +95,6 @@ export function sessionModels(state: SessionState): { currentModelId: string; av
 			// The CLI advertises exactly the (model, effort) pairs that exist — Argon has no
 			// xhigh — so a cross-product would publish IDs the server rejects with -32602.
 			const advertised = state.models?.availableModels;
-			const advertisedIsSelective =
-				advertised !== undefined &&
-				advertised.length >= 2 &&
-				new Set(advertised.map((model) => model.modelId)).size === advertised.length &&
-				advertised.every((model) =>
-					modelOptions.some(
-						(option) => model.modelId === option.value || model.modelId.startsWith(`${option.value}-`),
-					),
-				);
-			if (advertisedIsSelective) return { currentModelId, availableModels: advertised };
-			// Live selectors are authoritative; retain legacy labels only for the
-			// same complete, duplicate-free inventory.
 			const synthesized = modelOptions.flatMap((modelOpt) =>
 				qualified(modelOpt.value)
 					? [{ modelId: modelOpt.value, name: modelOpt.name }]
@@ -115,18 +103,22 @@ export function sessionModels(state: SessionState): { currentModelId: string; av
 							name: `${modelOpt.name} (${thoughtOpt.name})`,
 						})),
 			);
-			const synthesizedIds = new Set(synthesized.map((m) => m.modelId));
-
-			const legacy = state.models?.availableModels;
+			// Only IDs this session actually offers survive: either a selector value
+			// (models without an effort axis) or a real model/effort pair.
+			const knownIds = new Set([
+				...modelOptions.map((option) => option.value),
+				...synthesized.map((model) => model.modelId),
+			]);
+			const usableAdvertised = advertised !== undefined && isCompleteInventory(advertised, knownIds, 2);
+			if (usableAdvertised) return { currentModelId, availableModels: advertised };
+			// Live selectors are authoritative; retain legacy labels only for the
+			// same complete, duplicate-free inventory.
 			const isLegacyCompatible =
-				legacy !== undefined &&
-				legacy.length === synthesizedIds.size &&
-				new Set(legacy.map((model) => model.modelId)).size === synthesizedIds.size &&
-				legacy.every((m) => synthesizedIds.has(m.modelId));
+				advertised !== undefined && isCompleteInventory(advertised, knownIds, synthesized.length);
 
 			return {
 				currentModelId,
-				availableModels: isLegacyCompatible ? legacy : synthesized,
+				availableModels: isLegacyCompatible ? advertised : synthesized,
 			};
 		}
 	}
@@ -134,6 +126,18 @@ export function sessionModels(state: SessionState): { currentModelId: string; av
 		currentModelId: selector.currentValue,
 		availableModels: modelOptions.map((option) => ({ modelId: option.value, name: option.name })),
 	};
+}
+
+function isCompleteInventory(
+	models: readonly AcpModelInfo[],
+	knownIds: ReadonlySet<string>,
+	minimum: number,
+): boolean {
+	return (
+		models.length >= minimum &&
+		new Set(models.map((model) => model.modelId)).size === models.length &&
+		models.every((model) => knownIds.has(model.modelId))
+	);
 }
 
 export function sessionModes(state: SessionState): SessionModeState | null | undefined {

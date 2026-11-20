@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { inspectAntigravityCliTransport } from "../src/acp/antigravity.js";
 import { antigravityCliCandidates, resolveAntigravityCli } from "../src/acp/cli.js";
 import { loadTransport } from "../src/config.js";
 
@@ -66,6 +67,28 @@ describe("Antigravity CLI discovery", () => {
 			path: real,
 			source: "config cliPath",
 		});
+	});
+
+	it("reports the keychain login only for a CLI transport with a usable binary", async () => {
+		const created = temporaryDirectory();
+		const cli = path.join(created, "agy.exe");
+		fs.writeFileSync(cli, "");
+		const configDir = path.join(created, "agent", "antigravity-acp-provider");
+		fs.mkdirSync(configDir, { recursive: true });
+		const configFile = path.join(configDir, "config.json");
+		const previous = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = path.join(created, "agent");
+		try {
+			fs.writeFileSync(configFile, JSON.stringify({ transport: "server", cliPath: cli }));
+			expect(inspectAntigravityCliTransport()).toEqual({ status: "cli-missing" });
+			fs.writeFileSync(configFile, JSON.stringify({ transport: "cli", cliPath: cli }));
+			expect(inspectAntigravityCliTransport()).toEqual({ status: "cli-login", path: cli });
+			fs.writeFileSync(configFile, JSON.stringify({ transport: "cli", cliPath: path.join(created, "gone.exe") }));
+			expect(inspectAntigravityCliTransport()).toEqual({ status: "cli-missing" });
+		} finally {
+			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previous;
+		}
 	});
 
 	it.each([

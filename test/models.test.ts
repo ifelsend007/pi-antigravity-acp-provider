@@ -53,6 +53,15 @@ describe("projectModels", () => {
 		expect(models[2]?.reasoning).toBe(false);
 	});
 
+	it("spells non-Gemini fallback titles with their acronyms", () => {
+		const models = projectModels([
+			{ modelId: "gpt-oss-120b-low", name: "first" },
+			{ modelId: "gpt-oss-120b-medium", name: "second" },
+		]);
+		expect(models).toHaveLength(1);
+		expect(models[0]).toMatchObject({ id: "gpt-oss-120b", name: "GPT OSS 120b" });
+	});
+
 	it("deduplicates and rejects unsafe ids", () => {
 		const models = projectModels([
 			{ modelId: "gemini-a", name: "Gemini A" },

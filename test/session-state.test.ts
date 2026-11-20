@@ -120,6 +120,43 @@ describe("ACP session compatibility", () => {
 		});
 	});
 
+	it("drops an advertised inventory that names pairs the selectors never offered", () => {
+		const state = decodeSessionState({
+			models: {
+				currentModelId: "gemini-4-argon-high",
+				availableModels: [
+					{ modelId: "gemini-4-argon-low", name: "Gemini 4 Argon (Low)" },
+					{ modelId: "gemini-4-argon-ultra", name: "Gemini 4 Argon (Ultra)" },
+				],
+			},
+			configOptions: [
+				{
+					id: "model",
+					name: "Model",
+					category: "model",
+					type: "select",
+					currentValue: "gemini-4-argon",
+					options: [{ value: "gemini-4-argon", name: "Gemini 4 Argon" }],
+				},
+				{
+					id: "thought_level",
+					name: "Thinking Level",
+					category: "thought_level",
+					type: "select",
+					currentValue: "low",
+					options: [
+						{ value: "low", name: "Low" },
+						{ value: "high", name: "High" },
+					],
+				},
+			],
+		});
+		expect(sessionModels(state)?.availableModels.map((model) => model.modelId)).toEqual([
+			"gemini-4-argon-low",
+			"gemini-4-argon-high",
+		]);
+	});
+
 	it.each([
 		{
 			label: "base-only legacy models",

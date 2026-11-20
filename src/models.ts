@@ -271,10 +271,19 @@ function canonicalId(name: string, variants: Variants): string {
 		.replace(/^-+|-+$/gu, "");
 }
 
+const TITLE_ACRONYMS: Record<string, string> = {
+	gemini: "Gemini",
+	gpt: "GPT",
+	oss: "OSS",
+	glm: "GLM",
+	api: "API",
+	ai: "AI",
+};
+
 function titleFromId(id: string): string {
 	return id
 		.split("-")
-		.map((part) => (part === "gemini" ? "Gemini" : part.charAt(0).toUpperCase() + part.slice(1)))
+		.map((part) => TITLE_ACRONYMS[part] ?? part.charAt(0).toUpperCase() + part.slice(1))
 		.join(" ");
 }
 

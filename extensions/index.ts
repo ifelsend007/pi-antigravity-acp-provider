@@ -4,7 +4,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { inspectAntigravityAuth } from "../src/acp/antigravity.js";
+import { inspectAntigravityAuth, inspectAntigravityCliTransport } from "../src/acp/antigravity.js";
 import { describeCredentialStorage } from "../src/acp/credential-storage.js";
 import { errorMessage } from "../src/acp/errors.js";
 import { resolveAntigravityAcpEntry } from "../src/acp/process.js";
@@ -18,6 +18,7 @@ import {
 	isRuntimeUpdateMode,
 	isToolActivityMode,
 	loadConfig,
+	loadTransport,
 	permissionModeLabel,
 	savePermissionMode,
 	saveRuntimeUpdateMode,
@@ -255,22 +256,38 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 				);
 				return;
 			}
-			let entry: string;
-			try {
-				entry = resolveAntigravityAcpEntry();
-			} catch (error) {
-				entry = error instanceof Error ? error.message : String(error);
-			}
+			const cliRuntime = inspectAntigravityCliTransport();
 			const snapshot = await runtime.snapshot(verbose);
 			const auth = inspectAntigravityAuth();
-			const setup = inspectRuntimeSetup();
-			const update = await checkAntigravityAcpUpdate().catch(() => undefined);
-			ctx.ui.notify(
-				[
-					`Antigravity ACP provider ${PACKAGE_VERSION}`,
+			let runtimeLines: string[];
+			if (loadTransport().transport === "cli") {
+				runtimeLines = [
+					`Transport: official Antigravity CLI (${cliRuntime.path ?? "not found"}); updates are handled by agy`,
+					`Authentication: ${
+						cliRuntime.status === "cli-login"
+							? "cli-login (OS keychain, managed by agy)"
+							: "missing (run `agy acp --login`)"
+					}; ACP SDK ${ACP_SDK_VERSION}, protocol ${ACP_PROTOCOL_VERSION}`,
+				];
+			} else {
+				let entry: string;
+				try {
+					entry = resolveAntigravityAcpEntry();
+				} catch (error) {
+					entry = error instanceof Error ? error.message : String(error);
+				}
+				const setup = inspectRuntimeSetup();
+				const update = await checkAntigravityAcpUpdate().catch(() => undefined);
+				runtimeLines = [
 					`Runtime: installed=${setup.installedVersion ?? "external/unknown"} approved=${update?.approvedVersion ?? setup.approvedVersion} registry=${update?.latestVersion ?? "unavailable"} updates=${setup.updateMode}; ACP SDK ${ACP_SDK_VERSION}, protocol ${ACP_PROTOCOL_VERSION}`,
 					`Antigravity server: ${entry}`,
 					`Authentication: ${auth.status}${auth.authType ? ` (${auth.authType})` : ""}`,
+				];
+			}
+			ctx.ui.notify(
+				[
+					`Antigravity ACP provider ${PACKAGE_VERSION}`,
+					...runtimeLines,
 					`Credential storage (preflight): ${describeCredentialStorage()}`,
 					`Requested permission mode: ${permissionModeLabel(snapshot.permissionMode)}`,
 					`Tool activity mode: ${snapshot.toolActivityMode}`,

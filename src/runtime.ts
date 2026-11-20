@@ -413,7 +413,8 @@ export class AntigravityRuntime {
 	async authHealth(apiKey?: string): Promise<AntigravityAuthHealth & { networkValid?: boolean; error?: string }> {
 		const local = inspectAntigravityAuth();
 		try {
-			await this.discoverModels(apiKey ?? (hasUsableLocalAuth(local) ? MANAGED_AUTH_MARKER : undefined));
+			const managed = hasUsableLocalAuth(local) || hasAntigravityCli();
+			await this.discoverModels(apiKey ?? (managed ? MANAGED_AUTH_MARKER : undefined));
 			return { ...local, networkValid: true };
 		} catch (error) {
 			return { ...local, networkValid: false, error: errorMessage(error) };
