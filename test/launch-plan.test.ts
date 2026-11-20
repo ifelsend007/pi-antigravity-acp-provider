@@ -28,7 +28,7 @@ beforeEach(() => {
 	// Point the server lookup at a throwaway binary so the plan does not depend on
 	// whatever runtime the developer happens to have installed.
 	const serverBin = path.join(agentDir, "agy_acp_server.par");
-	fs.writeFileSync(serverBin, "");
+	fs.writeFileSync(serverBin, "", { mode: 0o755 });
 	process.env.AGY_ACP_BIN = serverBin;
 });
 

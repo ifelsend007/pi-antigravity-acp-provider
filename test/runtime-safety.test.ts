@@ -734,11 +734,12 @@ describe("tool projection diagnostics", () => {
 
 	it("bridges Pi tools on the official CLI even though it advertises no MCP capability", async () => {
 		const { runtime, connections } = setup("no-mcp", "yolo", undefined, { transport: "cli" });
-		await drain(runtime.stream(model, { tools, messages: [user("hello")] }, { sessionId: "cli-bridge", apiKey: "test-key" }));
+		const message = await drain(runtime.stream(model, { tools, messages: [user("use bridge")] }, { sessionId: "cli-bridge", apiKey: "test-key" }));
 		const process = (await runtime.snapshot()).processes[0];
 		expect(process?.mcpHttp).toBe(false);
 		expect(process?.mcpBridged).toBe(true);
 		expect(process?.omittedTools).toEqual([]);
+		expect(message.content.find((block) => block.type === "toolCall")).toMatchObject({ name: "echo" });
 		expect(connections).toHaveLength(1);
 	});
 

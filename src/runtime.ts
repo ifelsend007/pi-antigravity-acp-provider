@@ -189,6 +189,8 @@ export class AntigravityRuntime {
 
 	private readonly connectionFactory: AntigravityConnectionFactory;
 	private readonly ensureAgent: boolean;
+	/** True when this runtime owns the child process instead of an injected factory. */
+	private readonly managesRuntime: boolean;
 	private readonly sessionStore: AcpSessionStore | undefined;
 	private readonly maxBindings: number;
 	private readonly idleMs: number;
@@ -207,6 +209,7 @@ export class AntigravityRuntime {
 	) {
 		this.connectionFactory = connectionFactory ?? ((connectionOptions) => new AntigravityAcpConnection(connectionOptions));
 		this.ensureAgent = connectionFactory === undefined && !hasAntigravityCli();
+		this.managesRuntime = connectionFactory === undefined;
 		this.permissionMode = permissionMode;
 		this.transport = options?.transport ?? loadTransport().transport;
 		this.toolActivityMode = options?.toolActivityMode ?? "compact";
@@ -301,10 +304,10 @@ export class AntigravityRuntime {
 	private async fetchQuota(apiKey: string | undefined): Promise<AntigravityQuotaSnapshot> {
 		this.assertActive();
 		const epoch = this.bindingEpoch;
-		// Only the managed server answers `/usage`; the official CLI has no such
-		// command and would spend a real turn on the prompt instead. Only the
-		// managed runtime is installed on demand; an injected factory owns its process.
-		if (this.ensureAgent) await ensureAntigravityAcpReady();
+		// Only the managed server answers `/usage`; the official CLI has no such command.
+		// A runtime that owns its processes may install that server on demand, while an
+		// injected factory decides for itself which binary to run.
+		if (this.ensureAgent || (this.managesRuntime && !hasAntigravityAcpServer())) await ensureAntigravityAcpReady();
 		this.assertEpoch(epoch);
 		let sessionId: string | undefined;
 		let text = "";
