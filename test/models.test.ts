@@ -32,6 +32,27 @@ describe("projectModels", () => {
 		expect(splitEffortSuffix(id)).toBeUndefined();
 	});
 
+	it("projects non-Gemini catalog entries instead of dropping them", () => {
+		const models = projectModels([
+			{ modelId: "claude-opus-5-5-low", name: "Claude Opus 5.5 (Low)" },
+			{ modelId: "claude-opus-5-5-medium", name: "Claude Opus 5.5 (Medium)" },
+			{ modelId: "claude-opus-5-5-high", name: "Claude Opus 5.5 (High)" },
+			{ modelId: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
+			{ modelId: "gemini-pro-orchestrator-neon", name: "Orchestrator (Neon)" },
+		]);
+
+		expect(models.map((model) => model.id)).toEqual([
+			"claude-opus-5-5",
+			"gpt-oss-120b-medium",
+			"gemini-pro-orchestrator-neon",
+		]);
+		expect(models[0]).toMatchObject({ name: "Claude Opus 5.5", reasoning: true });
+		expect(models[0]?.thinkingLevelMap?.xhigh).toBeNull();
+		expect(resolveAcpModelId(models[0]!, "high")).toBe("claude-opus-5-5-high");
+		expect(models[1]?.thinkingLevelMap?.medium).toBe("gpt-oss-120b-medium");
+		expect(models[2]?.reasoning).toBe(false);
+	});
+
 	it("deduplicates and rejects unsafe ids", () => {
 		const models = projectModels([
 			{ modelId: "gemini-a", name: "Gemini A" },

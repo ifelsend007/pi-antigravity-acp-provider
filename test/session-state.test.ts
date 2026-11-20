@@ -66,6 +66,60 @@ describe("ACP session compatibility", () => {
 		});
 	});
 
+	it("trusts a selective advertised inventory instead of cross-multiplying levels", () => {
+		const state = decodeSessionState({
+			models: {
+				currentModelId: "gemini-4-argon-high",
+				availableModels: [
+					{ modelId: "gemini-4-argon-low", name: "Gemini 4 Argon (Low)" },
+					{ modelId: "gemini-4-argon-medium", name: "Gemini 4 Argon (Medium)" },
+					{ modelId: "gemini-4-argon-high", name: "Gemini 4 Argon (High)" },
+					{ modelId: "claude-opus-5-5-low", name: "Claude Opus 5.5 (Low)" },
+					{ modelId: "claude-opus-5-5-medium", name: "Claude Opus 5.5 (Medium)" },
+					{ modelId: "claude-opus-5-5-high", name: "Claude Opus 5.5 (High)" },
+				],
+			},
+			configOptions: [
+				{
+					id: "model",
+					name: "Model",
+					category: "model",
+					type: "select",
+					currentValue: "gemini-4-argon",
+					options: [
+						{ value: "gemini-4-argon", name: "Gemini 4 Argon" },
+						{ value: "claude-opus-5-5", name: "Claude Opus 5.5" },
+					],
+				},
+				{
+					id: "thought_level",
+					name: "Thinking Level",
+					category: "thought_level",
+					type: "select",
+					currentValue: "high",
+					options: [
+						{ value: "low", name: "Low" },
+						{ value: "medium", name: "Medium" },
+						{ value: "high", name: "High" },
+						{ value: "xhigh", name: "Extra" },
+					],
+				},
+			],
+		});
+		// Argon and Claude stop at high, so neither may gain a synthesized xhigh.
+		expect(sessionModels(state)).toEqual({
+			currentModelId: "gemini-4-argon-high",
+			availableModels: [
+				{ modelId: "gemini-4-argon-low", name: "Gemini 4 Argon (Low)" },
+				{ modelId: "gemini-4-argon-medium", name: "Gemini 4 Argon (Medium)" },
+				{ modelId: "gemini-4-argon-high", name: "Gemini 4 Argon (High)" },
+				{ modelId: "claude-opus-5-5-low", name: "Claude Opus 5.5 (Low)" },
+				{ modelId: "claude-opus-5-5-medium", name: "Claude Opus 5.5 (Medium)" },
+				{ modelId: "claude-opus-5-5-high", name: "Claude Opus 5.5 (High)" },
+			],
+		});
+	});
+
 	it.each([
 		{
 			label: "base-only legacy models",

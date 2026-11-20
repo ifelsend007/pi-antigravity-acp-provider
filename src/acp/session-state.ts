@@ -92,6 +92,19 @@ export function sessionModels(state: SessionState): { currentModelId: string; av
 				qualified(selector.currentValue) || !thoughtSelector.currentValue
 					? selector.currentValue
 					: `${selector.currentValue}-${thoughtSelector.currentValue}`;
+			// The CLI advertises exactly the (model, effort) pairs that exist — Argon has no
+			// xhigh — so a cross-product would publish IDs the server rejects with -32602.
+			const advertised = state.models?.availableModels;
+			const advertisedIsSelective =
+				advertised !== undefined &&
+				advertised.length >= 2 &&
+				new Set(advertised.map((model) => model.modelId)).size === advertised.length &&
+				advertised.every((model) =>
+					modelOptions.some(
+						(option) => model.modelId === option.value || model.modelId.startsWith(`${option.value}-`),
+					),
+				);
+			if (advertisedIsSelective) return { currentModelId, availableModels: advertised };
 			// Live selectors are authoritative; retain legacy labels only for the
 			// same complete, duplicate-free inventory.
 			const synthesized = modelOptions.flatMap((modelOpt) =>

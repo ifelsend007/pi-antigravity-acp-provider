@@ -527,11 +527,16 @@ function finishBeforePiResult(id) {
 	}, 350);
 }
 
+function modeIds() {
+	// The official CLI names the same three policies differently.
+	return scenario?.endsWith("cli-mode-ids") ? ["default", "accept-edits", "auto", "plan"] : ["default", "auto_edit", "yolo"];
+}
+
 function sessionModes(restored = false) {
 	if (scenario === "no-mode-metadata") return undefined;
 	const unavailable = scenario === "no-auto-edit-mode" ? "auto_edit"
 		: scenario === "no-default-mode" || (restored && scenario === "no-default-on-restore") ? "default" : undefined;
-	return { currentModeId: mode, availableModes: ["default", "auto_edit", "yolo"].filter((id) => id !== unavailable).map((id) => ({ id, name: id })) };
+	return { currentModeId: mode, availableModes: modeIds().filter((id) => id !== unavailable).map((id) => ({ id, name: id })) };
 }
 
 function sessionConfigOptions() {
@@ -545,7 +550,7 @@ function sessionConfigOptions() {
 				currentValue: effort, options: ["low", "medium", "high"].map((value) => ({ value, name: value })) }]
 			: []),
 		{ id: "permission-selector", name: "Permissions", category: "mode", type: "select", currentValue: mode,
-			options: ["default", "auto_edit", "yolo"].map((value) => ({ value, name: value })) },
+			options: modeIds().map((value) => ({ value, name: value })) },
 	];
 }
 

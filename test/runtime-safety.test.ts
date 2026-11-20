@@ -57,8 +57,15 @@ describe("permission policy and lifecycle", () => {
 		const { runtime, entries } = setup(scenario, "default");
 		const message = await turn(runtime, [user("hello")]);
 		expect(message.stopReason).toBe("error");
-		expect(message.errorMessage).toContain("did not advertise permission mode 'default'");
+		expect(message.errorMessage).toContain("did not advertise a mode for 'default'");
 		expect(entries().some((entry) => entry.method === "session/prompt")).toBe(false);
+	});
+
+	it.each(["cli-mode-ids", "config-options-cli-mode-ids"])("maps a policy onto the official CLI's mode ids: %s", async (scenario) => {
+		const { runtime, entries } = setup(scenario, "yolo");
+		const message = await turn(runtime, [user("hello")]);
+		expect(message.stopReason).toBe("stop");
+		expect(entries().find((entry) => entry.method === "session/prompt")?.mode).toBe("auto");
 	});
 
 	it("refuses an unsupported restored mode and removes that binding record", async () => {

@@ -4,9 +4,17 @@ import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
+import { loadTransport, type TransportMode } from "../config.js";
 import { resolveAntigravityAcpLaunch } from "./antigravity.js";
-import { redact } from "./errors.js";
-import { createLaunchTemp, recordServerPid, scheduleLaunchTempRemoval, type LaunchTemp } from "./launch-temp.js";
+import { resolveAntigravityCli } from "./cli.js";
+import { AntigravityAcpError, redact } from "./errors.js";
+import {
+	createLaunchTemp,
+	defaultLaunchTempRoot,
+	recordServerPid,
+	scheduleLaunchTempRemoval,
+	type LaunchTemp,
+} from "./launch-temp.js";
 import { applyAcpProxyEnvironment } from "./proxy.js";
 import { applyCredentialStorageEnvironment, type CredentialStorageOptions } from "./credential-storage.js";
 const STDERR_LIMIT = 16 * 1024;
@@ -20,6 +28,9 @@ export interface AntigravityProcessOptions {
 	entryPath?: string;
 	command?: string;
 	args?: string[];
+	/** `cli` launches the official `agy acp`; unset reads the plugin config. */
+	transport?: TransportMode;
+	cliPath?: string | null;
 	env?: NodeJS.ProcessEnv;
 	/** Overrides the credential-storage resolution seams (keychain probe and
 	 * token path) in tests; production callers leave this unset. */
@@ -140,18 +151,36 @@ export class AntigravityProcess {
 	constructor(options: AntigravityProcessOptions) {
 		let command: string;
 		let args: string[];
+		let launchTempFallback: string | undefined;
+		const transportConfig = loadTransport();
 		if (options.command) {
 			command = options.command;
 			args = options.args ?? [];
+		} else if (options.entryPath) {
+			const nodeBinary = resolveNodeBinary(options.env?.NODE, options.env ?? process.env);
+			command = nodeBinary;
+			args = [resolveSupervisorEntry(), "--command", nodeBinary, options.entryPath, ...(options.args ?? [])];
+		} else if ((options.transport ?? transportConfig.transport) === "cli") {
+			const cli = resolveAntigravityCli(options.cliPath ?? transportConfig.cliPath, {
+				env: options.env ?? process.env,
+			});
+			if (!cli) {
+				throw new AntigravityAcpError(
+					"spawn",
+					"Antigravity CLI (agy) was not found; install it or set cliPath in the plugin config",
+				);
+			}
+			command = cli.path;
+			args = ["acp"];
+			// The CLI is a PyInstaller bundle too; keep its unpacked files confined.
+			launchTempFallback = defaultLaunchTempRoot();
 		} else {
 			const nodeBinary = resolveNodeBinary(options.env?.NODE, options.env ?? process.env);
-			const launch = options.entryPath
-				? { command: nodeBinary, args: [options.entryPath, ...(options.args ?? [])] }
-				: resolveAntigravityAcpLaunch();
+			const launch = resolveAntigravityAcpLaunch();
 			command = nodeBinary;
 			args = [resolveSupervisorEntry(), "--command", launch.command, ...launch.args];
 		}
-		const launchTemp = resolveLaunchTemp(options);
+		const launchTemp = resolveLaunchTemp(options, launchTempFallback);
 		let resolveExit!: (exit: ProcessExit) => void;
 		this.exited = new Promise((resolve) => {
 			resolveExit = resolve;
@@ -284,11 +313,13 @@ function delay(ms: number): Promise<void> {
 /** Only a real Antigravity launch gets the confined temp root; an explicit
  * command or entry path (fixtures, `AGY_ACP_BIN` wrappers in tests) keeps the
  * ambient environment unless a root is passed in. */
-function resolveLaunchTemp(options: AntigravityProcessOptions): LaunchTemp | undefined {
-	const root = options.launchTempRoot;
-	if (root === null) return undefined;
-	if (root !== undefined) return createLaunchTemp(root);
-	return options.command || options.entryPath ? undefined : createLaunchTemp();
+function resolveLaunchTemp(
+	options: AntigravityProcessOptions,
+	fallbackRoot?: string,
+): LaunchTemp | undefined {
+	const root = options.launchTempRoot !== undefined ? options.launchTempRoot : fallbackRoot;
+	if (root === null || root === undefined) return undefined;
+	return createLaunchTemp(root);
 }
 
 function launchTempEnv(env: NodeJS.ProcessEnv, launchTemp: LaunchTemp | undefined): NodeJS.ProcessEnv {

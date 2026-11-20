@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { loadTransport } from "../config.js";
+import { resolveAntigravityCli } from "./cli.js";
 import { AntigravityAcpError } from "./errors.js";
 
 export interface AntigravityLaunch {
@@ -125,6 +127,13 @@ export function inspectAntigravityAuth(
 export function hasAntigravityAuth(): boolean {
 	const status = inspectAntigravityAuth().status;
 	return status === "api-key-env" || status === "oauth-refreshable";
+}
+
+/** The official CLI keeps its credential in the OS keychain and refreshes it
+ * itself, so the token files inspected above cannot see it. */
+export function hasAntigravityCli(): boolean {
+	const config = loadTransport();
+	return config.transport === "cli" && resolveAntigravityCli(config.cliPath) !== undefined;
 }
 
 /** Local logout. Google currently advertises logout as an agent command rather

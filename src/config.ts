@@ -5,6 +5,9 @@ import path from "node:path";
 export type PermissionMode = "default" | "auto_edit" | "yolo";
 export type RuntimeUpdateMode = "automatic" | "notify" | "manual";
 export type ToolActivityMode = "off" | "compact" | "full";
+/** `server` is the community `agy_acp_server` runtime; `cli` launches the
+ * official `agy acp` binary, which advertises the full account catalog. */
+export type TransportMode = "server" | "cli";
 
 export interface AntigravityAcpConfig {
 	permissions: PermissionMode;
@@ -68,6 +71,16 @@ export function loadConfig(file = resolveConfigPath()): AntigravityAcpConfig {
 export function loadLaunchTempRoot(file = resolveConfigPath()): string | null {
 	const value = readConfigFile(file).launchTempRoot;
 	return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** Transport selection is read separately so hand-edited keys survive the wizard's
+ * merged writes, matching how `launchTempRoot` is handled. */
+export function loadTransport(file = resolveConfigPath()): { transport: TransportMode; cliPath: string | null } {
+	const parsed = readConfigFile(file);
+	return {
+		transport: parsed.transport === "cli" ? "cli" : "server",
+		cliPath: typeof parsed.cliPath === "string" && parsed.cliPath.trim() ? parsed.cliPath.trim() : null,
+	};
 }
 
 

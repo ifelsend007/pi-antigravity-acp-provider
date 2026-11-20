@@ -9,7 +9,7 @@ import type {
 	SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 
-import { hasAntigravityAuth } from "./acp/antigravity.js";
+import { hasAntigravityAuth, hasAntigravityCli } from "./acp/antigravity.js";
 import { FALLBACK_MODELS, projectModels, PROVIDER_ID, restoreModels } from "./models.js";
 import { AntigravityRuntime, MANAGED_AUTH_MARKER } from "./runtime.js";
 
@@ -86,6 +86,9 @@ export function createAntigravityProvider(runtime = new AntigravityRuntime()): A
 					if (hasAntigravityAuth()) {
 						return { type: "api_key", source: "Antigravity OAuth refresh token" };
 					}
+					if (hasAntigravityCli()) {
+						return { type: "api_key", source: "Antigravity CLI login" };
+					}
 					return undefined;
 				},
 				async resolve({ ctx, credential }) {
@@ -98,6 +101,9 @@ export function createAntigravityProvider(runtime = new AntigravityRuntime()): A
 					}
 					if (hasAntigravityAuth()) {
 						return { auth: { apiKey: MANAGED_AUTH_MARKER }, source: "Antigravity OAuth refresh token" };
+					}
+					if (hasAntigravityCli()) {
+						return { auth: { apiKey: MANAGED_AUTH_MARKER }, source: "Antigravity CLI login" };
 					}
 					return undefined;
 				},
