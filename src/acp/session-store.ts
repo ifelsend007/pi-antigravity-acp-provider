@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolvePiAgentDir } from "../config.js";
+import type { TransportMode } from "../config.js";
 import { withStoreLock } from "./store-lock.js";
 
 export interface SavedSessionRecord {
@@ -11,7 +12,17 @@ export interface SavedSessionRecord {
 	messageCount: number;
 	historyFingerprint: string;
 	expectedAssistantFingerprint?: string;
+	/** Transport that created the session id; ids are not portable across runtimes. */
+	transport?: TransportMode;
 	lastActive: number;
+}
+
+/** Records written before transports existed belong to the managed server. */
+export function sessionMatchesTransport(
+	record: Pick<SavedSessionRecord, "transport">,
+	transport: TransportMode,
+): boolean {
+	return (record.transport ?? "server") === transport;
 }
 
 export function resolveSessionStorePath(): string {
@@ -82,6 +93,7 @@ function validRecord(value: unknown): value is SavedSessionRecord {
 		typeof record.historyFingerprint === "string" &&
 		(record.expectedAssistantFingerprint === undefined ||
 			typeof record.expectedAssistantFingerprint === "string") &&
+		(record.transport === undefined || record.transport === "cli" || record.transport === "server") &&
 		typeof record.lastActive === "number" &&
 		Number.isFinite(record.lastActive)
 	);

@@ -30,7 +30,7 @@ import { AntigravityAcpConnection, type AntigravityConnectionOptions } from "./a
 import { abortError, AntigravityAcpError, errorMessage } from "./acp/errors.js";
 import { permissionModeOf, resolveSessionMode } from "./acp/mode-map.js";
 import { quotaExhaustion } from "./acp/quota.js";
-import { AcpSessionStore } from "./acp/session-store.js";
+import { AcpSessionStore, sessionMatchesTransport } from "./acp/session-store.js";
 import { sessionModels, sessionModes, type AcpModelInfo, type AcpNewSessionResponse, type SessionState } from "./acp/session-state.js";
 import { parseUsageQuota, type AntigravityQuotaSnapshot } from "./acp/usage-quota.js";
 import {
@@ -51,7 +51,7 @@ import {
 	type ToolOmission,
 	type PiToolInvocation,
 } from "./mcp/bridge.js";
-import type { PermissionMode, ToolActivityMode } from "./config.js";
+import { loadTransport, type PermissionMode, type ToolActivityMode, type TransportMode } from "./config.js";
 import { resolveAcpModelId } from "./models.js";
 import { type PromptParts, buildPromptParts, currentSystemInstructions } from "./stream/context.js";
 import { PiEventWriter } from "./stream/pi-events.js";
@@ -131,6 +131,7 @@ export interface PermissionToolResult {
 
 export interface AntigravityRuntimeOptions {
 	maxBindings?: number;
+	transport?: TransportMode;
 	idleMs?: number;
 	toolActivityMode?: ToolActivityMode;
 }
@@ -161,6 +162,12 @@ export interface RuntimeSnapshot {
 
 export type AntigravityConnectionFactory = (options: AntigravityConnectionOptions) => AntigravityAcpConnection;
 
+/** agy answers a resumed-but-unknown session with `not_found: trajectory not found`. */
+function isMissingTrajectory(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /trajectory not found|not_found: trajectory/iu.test(message);
+}
+
 export class AntigravityRuntime {
 	private readonly bindings = new Map<string, Promise<Binding>>();
 	private readonly resolvedBindings = new Set<Binding>();
@@ -186,6 +193,7 @@ export class AntigravityRuntime {
 	private permissionMode: PermissionMode;
 	private toolActivityMode: ToolActivityMode;
 	private quotaCache: AntigravityQuotaSnapshot | undefined;
+	private readonly transport: TransportMode;
 	private quotaInFlight: { epoch: number; snapshot: Promise<AntigravityQuotaSnapshot> } | undefined;
 
 	constructor(
@@ -197,6 +205,7 @@ export class AntigravityRuntime {
 		this.connectionFactory = connectionFactory ?? ((connectionOptions) => new AntigravityAcpConnection(connectionOptions));
 		this.ensureAgent = connectionFactory === undefined && !hasAntigravityCli();
 		this.permissionMode = permissionMode;
+		this.transport = options?.transport ?? loadTransport().transport;
 		this.toolActivityMode = options?.toolActivityMode ?? "compact";
 		// The CLI transport still needs session persistence even though it ships its own
 		// runtime, so bind the store to factory presence rather than the install gate.
@@ -768,6 +777,12 @@ export class AntigravityRuntime {
 						activeWriter.done("stop");
 				}
 			} catch (error) {
+				// A resumed trajectory can disappear server-side; rebuild instead of
+				// replaying every later turn into the same dead session.
+				if (binding.restored && isMissingTrajectory(error)) {
+					binding.needsReconstruction = true;
+					if (binding.piSessionId) this.sessionStore?.remove(binding.piSessionId);
+				}
 				if ((binding.permission || binding.pendingTools.size > 0) && (binding.writer ?? writer).finished) {
 					this.commitProgress(binding, (binding.writer ?? writer).message);
 				}
@@ -915,7 +930,8 @@ export class AntigravityRuntime {
 			const saved = piSessionId ? this.sessionStore?.get(piSessionId) : undefined;
 			let session: AcpNewSessionResponse | undefined;
 			let restored = false;
-			if (saved?.cwd === cwd) {
+			// Session ids belong to one runtime: a server trajectory is unknown to the CLI.
+			if (saved?.cwd === cwd && sessionMatchesTransport(saved, this.transport)) {
 				if (initialize.agentCapabilities?.sessionCapabilities?.resume) {
 					try {
 						const resumed = await connection.resumeSession(saved.acpSessionId, cwd, mcpServers, signal);
@@ -1024,6 +1040,7 @@ export class AntigravityRuntime {
 			...(binding.expectedAssistantFingerprint
 				? { expectedAssistantFingerprint: binding.expectedAssistantFingerprint }
 				: {}),
+			transport: this.transport,
 			lastActive: Date.now(),
 		});
 	}

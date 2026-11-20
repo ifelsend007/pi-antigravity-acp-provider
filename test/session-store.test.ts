@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AcpSessionStore, resolveSessionStorePath } from "../src/acp/session-store.js";
+import { AcpSessionStore, resolveSessionStorePath, sessionMatchesTransport } from "../src/acp/session-store.js";
 
 const roots: string[] = [];
 const originalPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -15,6 +15,20 @@ afterEach(() => {
 		process.env.PI_CODING_AGENT_DIR = originalPiCodingAgentDir;
 	}
 	for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe("sessionMatchesTransport", () => {
+	it.each([
+		{ transport: "cli" as const, stored: "cli" as const, expected: true },
+		{ transport: "server" as const, stored: "server" as const, expected: true },
+		{ transport: "cli" as const, stored: "server" as const, expected: false },
+		{ transport: "server" as const, stored: "cli" as const, expected: false },
+		// Records from before transports existed were created by the managed server.
+		{ transport: "server" as const, stored: undefined, expected: true },
+		{ transport: "cli" as const, stored: undefined, expected: false },
+	])("keeps a $stored session under the $transport transport: $expected", ({ transport, stored, expected }) => {
+		expect(sessionMatchesTransport(stored === undefined ? {} : { transport: stored }, transport)).toBe(expected);
+	});
 });
 
 describe("AcpSessionStore", () => {
