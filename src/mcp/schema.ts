@@ -83,8 +83,12 @@ const JSON_TYPES = new Set(["object", "array", "string", "number", "integer", "b
 const HIDDEN_KEYS = new Set(["~kind", "~optional", "~readonly", "~immutable", "~unsafe"]);
 const KNOWN_KINDS = new Set([
 	"Object", "Array", "String", "Number", "Integer", "Boolean", "Null", "Literal",
-	"Union", "Intersect", "Enum", "Unknown", "Any",
+	"Union", "Intersect", "Enum", "Unknown", "Any", "Record",
 ]);
+// TypeBox renders `Type.Record(Type.String(), V)` as a single pattern matching every
+// key. Gemini has no regex-keyed maps, but an any-key pattern is exactly
+// `additionalProperties`, which it does support.
+const ANY_KEY_PATTERNS = new Set(["^.*$", "^(.*)$"]);
 
 /** Include non-enumerable keys (TypeBox validators can be hidden), but reject
  * custom prototypes, symbols and accessors rather than losing their semantics. */
@@ -122,6 +126,7 @@ function sanitizeNode(value: object, depth: number, budget: ProjectionBudget): P
 	const entries = plainEntries(value, budget);
 	if (!entries) return { reason: "unsupported_keyword" };
 	const output: Record<string, unknown> = {};
+	let record: Record<string, unknown> | undefined;
 	for (const [key, candidate] of entries) {
 		if (key.startsWith("~")) {
 			if (!HIDDEN_KEYS.has(key)) return { reason: "unsupported_keyword" };
@@ -181,6 +186,13 @@ function sanitizeNode(value: object, depth: number, budget: ProjectionBudget): P
 			output[key] = variants;
 			continue;
 		}
+		if (key === "patternProperties") {
+			const projected = projectAnyKeyRecord(candidate, depth, budget);
+			if (typeof projected === "string") return { reason: projected };
+			spend(budget, 0, key.length + 5);
+			record = projected;
+			continue;
+		}
 		let list: unknown[] | undefined;
 		if (key === "enum" || key === "required" || (key === "type" && typeof candidate === "object" && candidate !== null)) {
 			const snapshot = snapshotArray(candidate, budget);
@@ -212,9 +224,37 @@ function sanitizeNode(value: object, depth: number, budget: ProjectionBudget): P
 		spend(budget, 0, 9 + scalarChars(output.const as null | string | number | boolean));
 		output.enum = [output.const];
 	}
+	if (record) {
+		// Declared properties would bypass an any-key `additionalProperties` rewrite.
+		const declared = output.properties as Record<string, unknown> | undefined;
+		if (declared && Object.keys(declared).length > 0) return { reason: "unsupported_keyword" };
+		const extra = output.additionalProperties;
+		if (extra !== undefined && extra !== false && extra !== true) return { reason: "unsupported_keyword" };
+		output.additionalProperties = record;
+	}
 	// Never infer a type: beside const/enum/combinators that could contradict
 	// a valid typeless schema. Empty nested schemas legitimately allow anything.
 	return { schema: output };
+}
+
+/** Accept only a single any-key pattern, which is what `Type.Record(Type.String(), V)`
+ * compiles to; every other map stays omitted rather than widening its key set. */
+function projectAnyKeyRecord(
+	patternProperties: unknown,
+	depth: number,
+	budget: ProjectionBudget,
+): Record<string, unknown> | SchemaOmissionReason {
+	if (types.isProxy(patternProperties)) return "unsupported_keyword";
+	if (!patternProperties || typeof patternProperties !== "object" || Array.isArray(patternProperties)) {
+		return "invalid_keyword_value";
+	}
+	const patterns = plainEntries(patternProperties, budget);
+	if (!patterns) return "invalid_keyword_value";
+	const only = patterns.length === 1 ? patterns[0] : undefined;
+	if (!only || !ANY_KEY_PATTERNS.has(only[0])) return "unsupported_keyword";
+	const sanitized = sanitizeSchema(only[1], depth + 1, budget);
+	if ("reason" in sanitized) return sanitized.reason;
+	return sanitized.schema;
 }
 
 function jsonScalar(value: unknown): value is null | string | number | boolean {

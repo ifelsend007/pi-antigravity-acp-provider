@@ -48,6 +48,26 @@ describe("AntigravityRuntime", () => {
 		}
 	});
 
+	it("forwards its transport override to the connection it launches", async () => {
+		const seen: Array<string | undefined> = [];
+		const runtime = new AntigravityRuntime(
+			(options) => {
+				seen.push(options.transport);
+				return new AntigravityAcpConnection({ ...options, command: process.execPath, args: [fakeAgent] });
+			},
+			"yolo",
+			undefined,
+			{ transport: "cli" },
+		);
+		try {
+			const writer = runtime.stream(model, { messages: [{ role: "user", content: "hello", timestamp: 1 }] }, { apiKey: "test-key", sessionId: "transport-override" });
+			for await (const _event of writer.stream) void _event;
+			expect(seen).toEqual(["cli"]);
+		} finally {
+			await runtime.close();
+		}
+	});
+
 	it("recognizes Gemini CLI's advertised Google login method", async () => {
 		const runtime = new AntigravityRuntime(
 			(options) => new AntigravityAcpConnection({ ...options, command: process.execPath, args: [fakeAgent] }),

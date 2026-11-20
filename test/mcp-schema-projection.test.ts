@@ -80,6 +80,38 @@ describe("MCP schema projection", () => {
 		omitted({ type: "string" }, "not_object");
 	});
 
+	it("projects TypeBox string records as additionalProperties", () => {
+		expect(projectedSchema(tool(Type.Object({
+			action: Type.String(),
+			metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Arbitrary metadata" })),
+		})))).toEqual({
+			type: "object",
+			required: ["action"],
+			properties: {
+				action: { type: "string" },
+				metadata: { type: "object", additionalProperties: {}, description: "Arbitrary metadata" },
+			},
+		});
+		const typed = { type: "object", patternProperties: { "^.*$": { type: "string" } }, additionalProperties: false };
+		expect(projectedSchema(tool(typed))).toEqual({ type: "object", additionalProperties: { type: "string" } });
+	});
+
+	it("rejects records the model cannot express without widening", () => {
+		for (const value of [
+			{ type: "object", patternProperties: { "^x-": { type: "string" } } },
+			{ type: "object", patternProperties: { "^.*$": { type: "string" }, "^x-": { type: "string" } } },
+			{ type: "object", properties: { a: { type: "string" } }, patternProperties: { "^.*$": { type: "string" } } },
+			{ type: "object", patternProperties: { "^.*$": { type: "string" } }, additionalProperties: { type: "number" } },
+			{ type: "object", patternProperties: {} },
+		]) omitted(value, "unsupported_keyword");
+		omitted({ type: "object", patternProperties: { "^.*$": { not: {} } } }, "unsupported_keyword");
+	});
+
+	it("accepts the TypeBox Record kind marker", () => {
+		expect(projectedSchema(tool({ "~kind": "Record", type: "object", additionalProperties: { type: "string" } })))
+			.toEqual({ type: "object", additionalProperties: { type: "string" } });
+	});
+
 	it("keeps typeless nested schemas typeless instead of inferring contradictory types", () => {
 		const value = { const: 5, items: { type: "string" } };
 		expect(projectedSchema(tool(property(value))).properties.value).toEqual({ const: 5, enum: [5], items: { type: "string" } });

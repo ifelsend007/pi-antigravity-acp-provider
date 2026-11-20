@@ -1242,7 +1242,10 @@ export class AntigravityRuntime {
 
 	private createConnection(options: AntigravityConnectionOptions): AntigravityAcpConnection {
 		this.assertActive();
-		const connection = this.connectionFactory(options);
+		// The runtime decides the transport (and keys sessions on it), so it must reach
+		// the process too; otherwise a programmatic override silently launches the
+		// config's transport while bridging and session reuse assume the override.
+		const connection = this.connectionFactory({ transport: this.transport, ...options });
 		this.activeConnections.add(connection);
 		void connection.process.exited.then(() => this.activeConnections.delete(connection)).catch(() => undefined);
 		return connection;
