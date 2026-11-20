@@ -49,7 +49,7 @@ describe("Pi results arriving after the ACP prompt ended", () => {
 				}
 			};
 			return connection;
-		});
+		}, "default");
 		try {
 			const context: Context = {
 				messages: [{ role: "user", content: `use ${request}`, timestamp: 1 }],

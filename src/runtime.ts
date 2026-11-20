@@ -171,6 +171,15 @@ function isMissingTrajectory(error: unknown): boolean {
 	return /trajectory not found|not_found: trajectory/iu.test(message);
 }
 
+/** Prefer a persistent allow so yolo stops re-asking for every bridged tool call. */
+function preferAllow(options: readonly RequestPermissionRequest["options"][number][]): RequestPermissionRequest["options"][number] | undefined {
+	return (
+		options.find((option) => option.kind === "allow_always") ??
+		options.find((option) => option.kind === "allow_once") ??
+		undefined
+	);
+}
+
 export class AntigravityRuntime {
 	private readonly bindings = new Map<string, Promise<Binding>>();
 	private readonly resolvedBindings = new Set<Binding>();
@@ -1098,6 +1107,10 @@ export class AntigravityRuntime {
 		if (!binding?.writer || binding.writer.finished || binding.permission || binding.abortRequested || request.sessionId !== binding.session.sessionId) {
 			return Promise.resolve({ outcome: { outcome: "cancelled" } });
 		}
+		// yolo means "run without confirmation"; the official CLI still asks for every
+		// external MCP call, so answer those here instead of interrupting the user.
+		const auto = binding.mode === "yolo" ? preferAllow(request.options) : undefined;
+		if (auto) return Promise.resolve({ outcome: { outcome: "selected", optionId: auto.optionId } });
 		const id = crypto.randomUUID();
 		return new Promise<RequestPermissionResponse>((resolve) => {
 			const timer = setTimeout(() => {

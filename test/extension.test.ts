@@ -117,6 +117,9 @@ describe("extension entry point", () => {
 	});
 
 	it("resolves a permission parked through one instance with another instance's permission tool", async () => {
+		// yolo answers permission requests itself, so park one by asking for confirmations.
+		fs.mkdirSync(path.join(root, "agent", "antigravity-acp-provider"), { recursive: true });
+		fs.writeFileSync(path.join(root, "agent", "antigravity-acp-provider", "config.json"), JSON.stringify({ permissions: "default" }));
 		const parent = await load("parent");
 		const child = await load("child");
 		const parked = await stream([user("request permission")], "parent", parent.pi.providers[0]);

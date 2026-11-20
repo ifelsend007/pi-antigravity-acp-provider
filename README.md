@@ -47,7 +47,7 @@ In Pi:
 7. Run `/antigravity-acp setup` again to perform a network auth probe and model discovery.
 8. Run `/model` and select one of the `antigravity-acp` models.
 9. Press **Shift+Tab** to choose the reasoning effort. Only tiers advertised by Antigravity are exposed. A model with a single tier (for example Argon Medium during rollout) remains a reasoning model with that tier; the provider does not invent Low/High variants.
-10. Send a prompt. The default permission mode is `yolo`, so Antigravity-native commands and edits can run without confirmation.
+10. Send a prompt. The default permission mode is `yolo`, so Antigravity-native commands, edits, and bridged `pi_` tool calls can run without confirmation.
 
 The provider first looks at `AGY_ACP_BIN`, then its verified managed `~/.local/opt/agy-acp/current/` release, `~/.local/bin/agy_acp_server.par`, and `PATH`. Set `AGY_ACP_BIN` to explicitly prefer an externally managed runtime. If absent, it installs the platform build published in the ACP registry. A global `agy` or `gemini` command is not required.
 
@@ -151,7 +151,7 @@ The model path can also refuse requests with HTTP 429 `RESOURCE_EXHAUSTED` (rate
 
 ## Security boundary
 
-This launches a full coding agent with the user's OS privileges. **The default `yolo` mode permits Antigravity-native commands and edits without confirmation.** Use `/antigravity-acp permissions default` for confirmation prompts. Disabling ACP filesystem/terminal **client callbacks is not a sandbox** for Antigravity-native tools. Pi hooks govern tools routed through the `pi_` MCP namespace; Antigravity-native tools remain governed by Antigravity policy and ACP permission requests. New/restored sessions must advertise and confirm the requested permission mode. Unsupported or failed mode changes close affected sessions; an executing turn is stopped before changing its policy. Unexpected mode-change notifications also invalidate the session. Doctor/status distinguishes requested policy from each live binding's confirmed mode. This protocol enforcement is not a sandbox.
+This launches a full coding agent with the user's OS privileges. **The default `yolo` mode permits Antigravity-native commands and edits without confirmation, and answers ACP permission requests automatically (preferring a persistent allow), including those the official `agy acp` CLI raises for every external MCP call.** Use `/antigravity-acp permissions default` for confirmation prompts. Disabling ACP filesystem/terminal **client callbacks is not a sandbox** for Antigravity-native tools. Pi hooks govern tools routed through the `pi_` MCP namespace; Antigravity-native tools remain governed by Antigravity policy and ACP permission requests. New/restored sessions must advertise and confirm the requested permission mode. Unsupported or failed mode changes close affected sessions; an executing turn is stopped before changing its policy. Unexpected mode-change notifications also invalidate the session. Doctor/status distinguishes requested policy from each live binding's confirmed mode. This protocol enforcement is not a sandbox.
 
 ## Compatibility
 

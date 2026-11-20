@@ -68,6 +68,14 @@ describe("permission policy and lifecycle", () => {
 		expect(entries().find((entry) => entry.method === "session/prompt")?.mode).toBe("auto");
 	});
 
+	it("auto-approves permission requests in yolo instead of interrupting the user", async () => {
+		const { runtime, entries } = setup(undefined, "yolo");
+		const message = await drain(runtime.stream(model, { tools, messages: [user("permission")] }, { sessionId: "yolo-permission", apiKey: "test-key" }));
+		expect(message.content.some((block) => block.type === "toolCall" && block.name === PERMISSION_TOOL_NAME)).toBe(false);
+		expect(JSON.stringify(message.content)).toContain("Decision: selected");
+		expect(entries().filter((entry) => entry.method === "session/request_permission")).toEqual([]);
+	});
+
 	it("refuses an unsupported restored mode and removes that binding record", async () => {
 		const initial = setup(undefined, "default");
 		const store = new AcpSessionStore(path.join(initial.root, "sessions.json"));
@@ -294,7 +302,7 @@ describe("session lifecycle", () => {
 	});
 
 	it("resumes a one-off request's parked permission and then drops its binding", async () => {
-		const { runtime, connections } = setup();
+		const { runtime, connections } = setup(undefined, "default");
 		const options = { sessionId: randomUUID(), cacheRetention: "none" as const, apiKey: "test-key" };
 		const messages = [user("request permission")];
 		const first = await drain(runtime.stream(model, { messages }, options));
@@ -427,7 +435,7 @@ describe("instruction updates during continuations", () => {
 	});
 
 	it("preserves instructions arriving during a permission continuation", async () => {
-		const { runtime, entries } = setup();
+		const { runtime, entries } = setup(undefined, "default");
 		const context = normalizeContext({ systemPrompt: "ORIGINAL", messages: [user("permission")] });
 		const first = await drain(runtime.stream(model, context, { sessionId: "permission-rules", apiKey: "test-key" }));
 		const call = first.content.find((block) => block.type === "toolCall");
@@ -453,7 +461,7 @@ describe("instruction updates during continuations", () => {
 
 describe("abort cleanup", () => {
 	it.each(["use bridge", "permission"])("answers parked requests on abort and keeps a healthy process: %s", async (text) => {
-		const { runtime } = setup();
+		const { runtime } = setup(undefined, "default");
 		const controller = new AbortController();
 		const first = await drain(runtime.stream(model, { tools, messages: [user(text)] }, { sessionId: "abort", apiKey: "test-key", signal: controller.signal }));
 		expect(first.stopReason).toBe("toolUse");

@@ -298,6 +298,7 @@ describe("AntigravityRuntime", () => {
 	it("parks a permission request and resumes it from a Pi tool result", async () => {
 		const runtime = new AntigravityRuntime(
 			(options) => new AntigravityAcpConnection({ ...options, command: process.execPath, args: [fakeAgent] }),
+			"default",
 		);
 		try {
 			const firstContext: Context = {
