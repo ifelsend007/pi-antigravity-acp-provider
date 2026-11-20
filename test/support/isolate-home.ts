@@ -10,6 +10,9 @@ export default function isolateHome(): (() => void) | undefined {
 	if (LIVE_FLAGS.some((name) => process.env[name] === "1")) return undefined;
 	const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-agy-test-home-")));
 	process.env.HOME = home;
+	// Windows resolves `os.homedir()` from USERPROFILE, so HOME alone would leak the
+	// developer's real ~/.pi/agent config (transport, permission mode) into tests.
+	if (process.platform === "win32") process.env.USERPROFILE = home;
 	delete process.env.GEMINI_HOME;
 	return () => fs.rmSync(home, { recursive: true, force: true });
 }

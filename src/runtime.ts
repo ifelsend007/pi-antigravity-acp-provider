@@ -101,6 +101,8 @@ interface Binding {
 	inferences: number;
 	toolBatchTimer: ReturnType<typeof setTimeout> | undefined;
 	bridge: PiMcpBridge | undefined;
+	/** True when Pi tools reached the agent through the MCP bridge. */
+	mcpBridged: boolean;
 	toolFingerprint: string;
 	omittedTools: ToolOmission[];
 	turnCompletion: Promise<void> | undefined;
@@ -154,6 +156,7 @@ export interface RuntimeSnapshot {
 		waitingForTools: number;
 		agentVersion: string | undefined;
 		mcpHttp: boolean;
+		mcpBridged: boolean;
 		restored: boolean;
 		ignoredStdoutNoiseLines: number;
 		stderrTail?: string;
@@ -299,8 +302,9 @@ export class AntigravityRuntime {
 		this.assertActive();
 		const epoch = this.bindingEpoch;
 		// Only the managed server answers `/usage`; the official CLI has no such
-		// command and would spend a real turn on the prompt instead.
-		if (this.ensureAgent || !hasAntigravityAcpServer()) await ensureAntigravityAcpReady();
+		// command and would spend a real turn on the prompt instead. Only the
+		// managed runtime is installed on demand; an injected factory owns its process.
+		if (this.ensureAgent) await ensureAntigravityAcpReady();
 		this.assertEpoch(epoch);
 		let sessionId: string | undefined;
 		let text = "";
@@ -493,6 +497,7 @@ export class AntigravityRuntime {
 					waitingForTools: binding.pendingTools.size,
 					agentVersion: binding.initialize.agentInfo?.version,
 					mcpHttp: binding.initialize.agentCapabilities?.mcpCapabilities?.http === true,
+					mcpBridged: binding.mcpBridged,
 					restored: binding.restored,
 					ignoredStdoutNoiseLines: binding.connection.process.ignoredStdoutNoiseLines,
 					...(includeStderr ? { stderrTail: binding.connection.process.stderrTail } : {}),
@@ -914,11 +919,13 @@ export class AntigravityRuntime {
 			this.assertSessionEpoch(key, epoch, sessionEpoch);
 			await authenticateForCredential(connection, initialize, apiKey, signal);
 			this.assertSessionEpoch(key, epoch, sessionEpoch);
-			const omittedTools = initialize.agentCapabilities?.mcpCapabilities?.http === true
+			// The official CLI spawns http MCP servers without advertising the capability.
+			const mcpBridgeable = initialize.agentCapabilities?.mcpCapabilities?.http === true || this.transport === "cli";
+			const omittedTools = mcpBridgeable
 				? planToolProjection(tools)
 				: tools.filter((tool) => tool.name !== PERMISSION_TOOL_NAME).map((tool) => ({ name: tool.name, reason: "Agent did not advertise MCP over HTTP" }));
 			let mcpServer;
-			if (tools.length > 0 && initialize.agentCapabilities?.mcpCapabilities?.http === true) {
+			if (tools.length > 0 && mcpBridgeable) {
 				bridge = new PiMcpBridge({
 					tools,
 					onCall: (invocation) => this.requestPiTool(binding, invocation),
@@ -990,6 +997,7 @@ export class AntigravityRuntime {
 				inferences: 0,
 				toolBatchTimer: undefined,
 				bridge,
+				mcpBridged: mcpServer !== undefined,
 				toolFingerprint: piToolFingerprint(tools),
 				omittedTools,
 				turnCompletion: undefined,

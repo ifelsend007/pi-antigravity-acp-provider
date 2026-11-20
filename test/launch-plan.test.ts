@@ -8,6 +8,7 @@ import { planLaunch, resolveSupervisorEntry } from "../src/acp/process.js";
 const temporaryDirectories: string[] = [];
 let agentDir: string;
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalServerBin = process.env.AGY_ACP_BIN;
 
 function temporaryDirectory(prefix: string): string {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -24,11 +25,18 @@ beforeEach(() => {
 		path.join(configDirectory, "config.json"),
 		JSON.stringify({ launchTempRoot: path.join(agentDir, "confined") }),
 	);
+	// Point the server lookup at a throwaway binary so the plan does not depend on
+	// whatever runtime the developer happens to have installed.
+	const serverBin = path.join(agentDir, "agy_acp_server.par");
+	fs.writeFileSync(serverBin, "");
+	process.env.AGY_ACP_BIN = serverBin;
 });
 
 afterEach(() => {
 	if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 	else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+	if (originalServerBin === undefined) delete process.env.AGY_ACP_BIN;
+	else process.env.AGY_ACP_BIN = originalServerBin;
 	for (const directory of temporaryDirectories.splice(0)) {
 		fs.rmSync(directory, { recursive: true, force: true });
 	}

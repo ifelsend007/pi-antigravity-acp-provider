@@ -31,7 +31,7 @@ function setup(
 	scenario?: string,
 	mode: PermissionMode = "yolo",
 	store?: AcpSessionStore,
-	runtimeOptions?: { maxBindings?: number; idleMs?: number },
+	runtimeOptions?: { maxBindings?: number; idleMs?: number; transport?: "cli" | "server" },
 ) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "acp-runtime-safety-")); roots.push(root);
 	const log = path.join(root, "calls.jsonl"); fs.writeFileSync(log, "");
@@ -730,6 +730,16 @@ describe("tool projection diagnostics", () => {
 		const writer = runtime.stream(model, { tools: [{ name: "unsupported", description: "bad", parameters: Type.String() }], messages: [user("hello")] }, { sessionId: "omissions", apiKey: "test-key" });
 		await drain(writer);
 		expect((await runtime.snapshot()).processes[0]?.omittedTools).toEqual([{ name: "unsupported", reason: expect.stringContaining(scenario ? "MCP over HTTP" : "not_object") }]);
+	});
+
+	it("bridges Pi tools on the official CLI even though it advertises no MCP capability", async () => {
+		const { runtime, connections } = setup("no-mcp", "yolo", undefined, { transport: "cli" });
+		await drain(runtime.stream(model, { tools, messages: [user("hello")] }, { sessionId: "cli-bridge", apiKey: "test-key" }));
+		const process = (await runtime.snapshot()).processes[0];
+		expect(process?.mcpHttp).toBe(false);
+		expect(process?.mcpBridged).toBe(true);
+		expect(process?.omittedTools).toEqual([]);
+		expect(connections).toHaveLength(1);
 	});
 
 	it("revalidates changed tools before a continuation early return", async () => {
