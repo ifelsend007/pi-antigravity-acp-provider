@@ -38,6 +38,8 @@ beforeEach(() => {
 	fs.writeFileSync(log, "");
 	// Never read or migrate a developer's real configuration.
 	vi.stubEnv("PI_CODING_AGENT_DIR", path.join(root, "agent"));
+	// A developer machine may have a real managed CLI on the dev drive.
+	vi.stubEnv("PI_ANTIGRAVITY_CLI_ROOT", path.join(root, "managed"));
 	vi.spyOn(os, "homedir").mockReturnValue(path.join(root, "home"));
 	registry = new Map();
 	loaded = [];

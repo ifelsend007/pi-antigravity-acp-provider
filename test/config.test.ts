@@ -6,11 +6,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_CONFIG_PATH,
 	LEGACY_GEMINI_CONFIG_PATH,
+	loadCliUpdates,
 	loadConfig,
 	loadLaunchTempRoot,
+	loadTransport,
 	resolveConfigPath,
 	resolveConfigRoot,
 	resolvePiAgentDir,
+	saveCliLocation,
+	saveCliUpdates,
 	savePermissionMode,
 	saveRuntimeUpdateMode,
 	saveToolActivityMode,
@@ -200,5 +204,69 @@ describe("launch temp root configuration", () => {
 		savePermissionMode("auto_edit", file);
 		expect(loadConfig(file)).toEqual({ permissions: "auto_edit", runtimeUpdates: "automatic", toolActivity: "off" });
 		expect(loadLaunchTempRoot(file)).toBe("V:/tmp");
+	});
+});
+describe("antigravity cli location", () => {
+	it.each([
+		{ name: "an absent key", content: {}, expected: { transport: "server", cliPath: null, cliRoot: null } },
+		{ name: "a blank root", content: { cliRoot: "  " }, expected: { transport: "server", cliPath: null, cliRoot: null } },
+		{
+			name: "a configured root and path",
+			content: { transport: "cli", cliPath: " V:/DevCache/agy/1.5.13/agy.exe ", cliRoot: " V:/DevCache/agy " },
+			expected: { transport: "cli", cliPath: "V:/DevCache/agy/1.5.13/agy.exe", cliRoot: "V:/DevCache/agy" },
+		},
+		{
+			name: "an unknown transport",
+			content: { transport: "carrier-pigeon" },
+			expected: { transport: "server", cliPath: null, cliRoot: null },
+		},
+	])("reads $name", ({ content, expected }) => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "antigravity-acp-config-"));
+		directories.push(directory);
+		const file = path.join(directory, "config.json");
+		fs.writeFileSync(file, JSON.stringify(content));
+		expect(loadTransport(file)).toEqual(expected);
+	});
+
+	it("clears a pinned path when the root is changed", () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "antigravity-acp-config-"));
+		directories.push(directory);
+		const file = path.join(directory, "config.json");
+		fs.writeFileSync(file, JSON.stringify({ transport: "cli", cliPath: "V:/old/agy.exe", cliRoot: "V:/old" }));
+		saveCliLocation({ cliRoot: "V:/DevCache/agy", cliPath: null }, file);
+		expect(loadTransport(file)).toEqual({ transport: "cli", cliPath: null, cliRoot: "V:/DevCache/agy" });
+	});
+
+	it("keeps the root and update mode across a permission toggle", () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "antigravity-acp-config-"));
+		directories.push(directory);
+		const file = path.join(directory, "config.json");
+		fs.writeFileSync(file, JSON.stringify({ permissions: "yolo", cliRoot: "V:/DevCache/agy", cliUpdates: "automatic" }));
+		savePermissionMode("auto_edit", file);
+		expect(loadTransport(file).cliRoot).toBe("V:/DevCache/agy");
+		expect(loadCliUpdates(file)).toBe("automatic");
+	});
+});
+
+describe("antigravity cli update mode", () => {
+	it.each([
+		{ name: "an absent key", content: {}, expected: "notify" },
+		{ name: "an unknown mode", content: { cliUpdates: "sometimes" }, expected: "notify" },
+		{ name: "manual", content: { cliUpdates: "manual" }, expected: "manual" },
+		{ name: "automatic", content: { cliUpdates: "automatic" }, expected: "automatic" },
+	])("reads $name", ({ content, expected }) => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "antigravity-acp-config-"));
+		directories.push(directory);
+		const file = path.join(directory, "config.json");
+		fs.writeFileSync(file, JSON.stringify(content));
+		expect(loadCliUpdates(file)).toBe(expected);
+	});
+
+	it("round-trips a saved mode", () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "antigravity-acp-config-"));
+		directories.push(directory);
+		const file = path.join(directory, "config.json");
+		saveCliUpdates("automatic", file);
+		expect(loadCliUpdates(file)).toBe("automatic");
 	});
 });

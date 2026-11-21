@@ -2,16 +2,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { loadTransport } from "../config.js";
+import { antigravityCliBinary, expandHome, installedCliVersions, resolveCliRoot } from "./cli-install.js";
+
 /** The official Antigravity CLI ships as `agy` and speaks ACP over stdio once
  * started as `agy acp`. Unlike the community ACP server it advertises the full
  * account catalog (Claude, GPT-OSS, orchestrators) and owns its own login. */
 export interface AntigravityCliLocation {
 	path: string;
 	source: string;
-}
-
-export function antigravityCliBinary(platform: NodeJS.Platform = process.platform): string {
-	return platform === "win32" ? "agy.exe" : "agy";
 }
 
 /** Candidate install locations, most explicit first: configured path, the
@@ -24,13 +23,19 @@ export interface AntigravityCliLookupOptions {
 }
 
 export function antigravityCliCandidates(
-	options: AntigravityCliLookupOptions & { cliPath?: string | null | undefined } = {},
+	options: AntigravityCliLookupOptions & { cliPath?: string | null | undefined; cliRoot?: string | null | undefined } = {},
 ): AntigravityCliLocation[] {
 	const env = options.env ?? process.env;
 	const platform = options.platform ?? process.platform;
 	const home = options.home ?? os.homedir();
 	const binary = antigravityCliBinary(platform);
 	const candidates: AntigravityCliLocation[] = [];
+	const root = options.cliRoot?.trim();
+	if (root) {
+		for (const installed of installedCliVersions(expandHome(root, home), platform)) {
+			candidates.push({ path: installed.path, source: `managed ${installed.version}` });
+		}
+	}
 	const configured = options.cliPath?.trim();
 	if (configured) candidates.push({ path: expandHome(configured, home), source: "config cliPath" });
 	const override = env.PI_ANTIGRAVITY_CLI?.trim() || env.AGY_CLI?.trim();
@@ -52,7 +57,7 @@ export function antigravityCliCandidates(
 
 export function resolveAntigravityCli(
 	cliPath?: string | null | undefined,
-	options: AntigravityCliLookupOptions = {},
+	options: AntigravityCliLookupOptions & { cliRoot?: string | null | undefined } = {},
 	isExecutable: (file: string) => boolean = executableFileFor(options.platform ?? process.platform),
 ): AntigravityCliLocation | undefined {
 	return antigravityCliCandidates({ ...options, cliPath }).find((candidate) =>
@@ -60,9 +65,14 @@ export function resolveAntigravityCli(
 	);
 }
 
-function expandHome(file: string, home: string): string {
-	if (file === "~") return home;
-	return file.startsWith("~/") || file.startsWith("~\\") ? path.join(home, file.slice(2)) : file;
+/** Resolves the CLI from the plugin config in one place: the managed root's
+ * newest copy first, then `cliPath`, then the legacy and PATH locations. */
+export function resolveConfiguredCli(options: AntigravityCliLookupOptions = {}): AntigravityCliLocation | undefined {
+	const config = loadTransport();
+	return resolveAntigravityCli(config.cliPath, {
+		...options,
+		cliRoot: resolveCliRoot(config.cliRoot, options),
+	});
 }
 
 function executableFileFor(platform: NodeJS.Platform): (file: string) => boolean {

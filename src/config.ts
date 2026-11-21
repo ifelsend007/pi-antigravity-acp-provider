@@ -73,16 +73,38 @@ export function loadLaunchTempRoot(file = resolveConfigPath()): string | null {
 	return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-/** Transport selection is read separately so hand-edited keys survive the wizard's
- * merged writes, matching how `launchTempRoot` is handled. */
-export function loadTransport(file = resolveConfigPath()): { transport: TransportMode; cliPath: string | null } {
+/** Transport selection and the CLI location are read separately so hand-edited
+ * keys survive the wizard's merged writes, matching how `launchTempRoot` is handled. */
+export function loadTransport(file = resolveConfigPath()): {
+	transport: TransportMode;
+	cliPath: string | null;
+	cliRoot: string | null;
+} {
 	const parsed = readConfigFile(file);
 	return {
 		transport: parsed.transport === "cli" ? "cli" : "server",
-		cliPath: typeof parsed.cliPath === "string" && parsed.cliPath.trim() ? parsed.cliPath.trim() : null,
+		cliPath: nonEmptyString(parsed.cliPath),
+		cliRoot: nonEmptyString(parsed.cliRoot),
 	};
 }
 
+/** `automatic` upgrades without asking, `notify` only reports a newer release,
+ * `manual` silences even the notice. */
+export function loadCliUpdates(file = resolveConfigPath()): RuntimeUpdateMode {
+	const value = readConfigFile(file).cliUpdates;
+	return isRuntimeUpdateMode(value) ? value : "notify";
+}
+
+export function saveCliUpdates(mode: RuntimeUpdateMode, file = resolveConfigPath()): void {
+	patchConfigFile({ cliUpdates: mode }, file);
+}
+
+export function saveCliLocation(
+	location: { cliPath?: string | null; cliRoot?: string | null },
+	file = resolveConfigPath(),
+): void {
+	patchConfigFile(location, file);
+}
 
 export function savePermissionMode(mode: PermissionMode, file = resolveConfigPath()): void {
 	writeConfig({ ...loadConfig(file), permissions: mode }, file);
@@ -97,14 +119,27 @@ export function saveToolActivityMode(mode: ToolActivityMode, file = resolveConfi
 }
 
 function writeConfig(config: AntigravityAcpConfig, file: string): void {
+	patchConfigFile({ ...config }, file);
+}
+
+/** Merges over the file: keys the wizard does not own (launchTempRoot, cliRoot,
+ * cliPath, and any future hand-edited setting) must survive a toggle write.
+ * `null` removes the key so a cleared path really means "discover it". */
+function patchConfigFile(patch: Record<string, unknown>, file: string): void {
 	const directory = path.dirname(file);
 	fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
 	const temporary = `${file}.${process.pid}.tmp`;
-	// Merge over the file: keys the wizard does not own (launchTempRoot and any
-	// future hand-edited setting) must survive a permission or update toggle.
-	const merged = { ...readConfigFile(file), ...config };
+	const merged: Record<string, unknown> = { ...readConfigFile(file) };
+	for (const [key, value] of Object.entries(patch)) {
+		if (value === null || value === undefined) delete merged[key];
+		else merged[key] = value;
+	}
 	fs.writeFileSync(temporary, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
 	fs.renameSync(temporary, file);
+}
+
+function nonEmptyString(value: unknown): string | null {
+	return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function readConfigFile(file: string): Record<string, unknown> {

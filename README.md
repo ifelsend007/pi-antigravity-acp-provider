@@ -97,6 +97,7 @@ On macOS the Antigravity server keeps the consumer token in the login keychain (
 /antigravity-acp permissions auto-edit
 /antigravity-acp permissions yolo
 /antigravity-acp tool-activity [off|compact|full]
+/antigravity-acp cli [status|update|root [dir]|updates [automatic|notify|manual]]
 ```
 
 Permission, runtime-update, and tool-activity modes are saved in `$PI_CODING_AGENT_DIR/antigravity-acp-provider/config.json` (where `PI_CODING_AGENT_DIR` defaults to `~/.pi/agent`). Runtime updates default to `automatic` (only provider-managed installations are replaced), and `toolActivity` defaults to `off` in this fork; optional values are `compact` (one line per Antigravity `tool_call` start) and `full` (all updates and details). ACP session bindings are saved beside the config in `sessions.json`.
@@ -104,6 +105,8 @@ Permission, runtime-update, and tool-activity modes are saved in `$PI_CODING_AGE
 Two hand-edited keys live in the same file and survive every wizard write. `launchTempRoot` pins the directory the server unpacks itself into; its `launch-*` directories are reclaimed when their owning processes are gone. `toolActivity` exists because Antigravity's ACP stream carries tool activity but no thought content, and Pi has no channel for another agent's tool calls, so the only place it could go is the thinking block; `off` keeps that block empty for real reasoning, and `/antigravity-acp tool-activity` switches it without editing the file.
 
 `transport` selects which binary speaks ACP. The default `server` uses the community `agy_acp_server` runtime this provider downloads and verifies. `cli` launches the official `agy acp` binary instead: it logs in through the OS keychain it already owns, needs no runtime download, and advertises the account's full catalog (Gemini, Claude, GPT-OSS, orchestrators) rather than the three ids the community server exposes. `cliPath` pins that binary; otherwise `PI_ANTIGRAVITY_CLI`/`AGY_CLI`, `%LOCALAPPDATA%\Programs\Antigravity`, `~/.gemini/antigravity-cli/bin` and `PATH` are searched.
+
+`cliRoot` is where the provider installs the CLI it manages: `V:DevCacheagy` when that drive exists, otherwise `~/.local/opt/agy-cli` (`PI_ANTIGRAVITY_CLI_ROOT` overrides both). Installs live at `<root>/<version>/agy[.exe]`, are verified against the sha512 in Google's own auto-updater manifest before a rename publishes them, and the newest three copies are kept so a rollback stays possible. `/antigravity-acp cli update` fetches that manifest and installs the published release, repointing `cliPath` at it; on startup the provider re-checks the same manifest at most every six hours and, depending on `cliUpdates` (`notify` by default, also `automatic` or `manual`), mentions a newer release, installs it silently, or stays quiet.
 
 On first use of a custom profile without a config, existing permission/update settings are copied from the default agent directory (or the legacy Gemini-provider config). Existing custom configs are never overwritten, and saved sessions are not copied. **Custom Pi profiles do not isolate Antigravity accounts or managed runtimes:** Antigravity's OAuth credentials and runtime installation remain in their shared locations.
 

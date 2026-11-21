@@ -77,7 +77,9 @@ describe("Antigravity CLI discovery", () => {
 		fs.mkdirSync(configDir, { recursive: true });
 		const configFile = path.join(configDir, "config.json");
 		const previous = process.env.PI_CODING_AGENT_DIR;
+		const previousRoot = process.env.PI_ANTIGRAVITY_CLI_ROOT;
 		process.env.PI_CODING_AGENT_DIR = path.join(created, "agent");
+		process.env.PI_ANTIGRAVITY_CLI_ROOT = path.join(created, "managed");
 		try {
 			fs.writeFileSync(configFile, JSON.stringify({ transport: "server", cliPath: cli }));
 			expect(inspectAntigravityCliTransport()).toEqual({ status: "cli-missing" });
@@ -88,15 +90,24 @@ describe("Antigravity CLI discovery", () => {
 		} finally {
 			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = previous;
+			if (previousRoot === undefined) delete process.env.PI_ANTIGRAVITY_CLI_ROOT;
+			else process.env.PI_ANTIGRAVITY_CLI_ROOT = previousRoot;
 		}
 	});
 
 	it.each([
-		{ config: { transport: "cli", cliPath: "D:/agy.exe" }, expected: { transport: "cli", cliPath: "D:/agy.exe" } },
-		{ config: { transport: "cli" }, expected: { transport: "cli", cliPath: null } },
-		{ config: { transport: "server", cliPath: "  " }, expected: { transport: "server", cliPath: null } },
-		{ config: {}, expected: { transport: "server", cliPath: null } },
-		{ config: { transport: "bogus" }, expected: { transport: "server", cliPath: null } },
+		{
+			config: { transport: "cli", cliPath: "D:/agy.exe" },
+			expected: { transport: "cli", cliPath: "D:/agy.exe", cliRoot: null },
+		},
+		{ config: { transport: "cli" }, expected: { transport: "cli", cliPath: null, cliRoot: null } },
+		{ config: { transport: "server", cliPath: "  " }, expected: { transport: "server", cliPath: null, cliRoot: null } },
+		{ config: {}, expected: { transport: "server", cliPath: null, cliRoot: null } },
+		{ config: { transport: "bogus" }, expected: { transport: "server", cliPath: null, cliRoot: null } },
+		{
+			config: { transport: "cli", cliRoot: "V:/DevCache/agy" },
+			expected: { transport: "cli", cliPath: null, cliRoot: "V:/DevCache/agy" },
+		},
 	])("reads transport settings from config ($config)", ({ config, expected }) => {
 		const file = path.join(temporaryDirectory(), "config.json");
 		fs.writeFileSync(file, JSON.stringify(config));

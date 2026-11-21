@@ -62,7 +62,12 @@ describe("launch planning", () => {
 
 	it("refuses to plan a CLI launch without an agy binary", () => {
 		expect(() =>
-			planLaunch({ cwd: agentDir, env: { PATH: "", HOME: agentDir }, transport: "cli", cliPath: null }),
+			planLaunch({
+				cwd: agentDir,
+				env: { PATH: "", HOME: agentDir, PI_ANTIGRAVITY_CLI_ROOT: path.join(agentDir, "managed") },
+				transport: "cli",
+				cliPath: null,
+			}),
 		).toThrow(/agy/);
 	});
 

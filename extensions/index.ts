@@ -5,6 +5,7 @@ import type {
 import { Type } from "typebox";
 
 import { inspectAntigravityAuth, inspectAntigravityCliTransport } from "../src/acp/antigravity.js";
+import { describeCliInstallation, describeCliRoot, upgradeCli } from "../src/acp/cli-upgrade.js";
 import { describeCredentialStorage } from "../src/acp/credential-storage.js";
 import { errorMessage } from "../src/acp/errors.js";
 import { resolveAntigravityAcpEntry } from "../src/acp/process.js";
@@ -17,9 +18,13 @@ import {
 	isPermissionMode,
 	isRuntimeUpdateMode,
 	isToolActivityMode,
+	loadCliUpdates,
 	loadConfig,
 	loadTransport,
 	permissionModeLabel,
+	resolveConfigRoot,
+	saveCliLocation,
+	saveCliUpdates,
 	savePermissionMode,
 	saveRuntimeUpdateMode,
 	saveToolActivityMode,
@@ -224,6 +229,66 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 				);
 				return;
 			}
+			if (command === "cli" || command.startsWith("cli ")) {
+				const request = command.slice("cli".length).trim();
+				if (request === "updates" || request.startsWith("updates ")) {
+					const requested = request.slice("updates".length).trim();
+					if (!requested) {
+						ctx.ui.notify(`Antigravity CLI updates: ${loadCliUpdates()}`, "info");
+						return;
+					}
+					if (!isRuntimeUpdateMode(requested)) {
+						ctx.ui.notify("Usage: /antigravity-acp cli updates [automatic|notify|manual]", "warning");
+						return;
+					}
+					saveCliUpdates(requested);
+					ctx.ui.notify(`Antigravity CLI updates: ${requested}`, "info");
+					return;
+				}
+				if (request === "root" || request.startsWith("root ")) {
+					const requested = request.slice("root".length).trim();
+					if (!requested) {
+						ctx.ui.notify(`Antigravity CLI root: ${describeCliRoot()}`, "info");
+						return;
+					}
+					saveCliLocation({ cliRoot: requested, cliPath: null });
+					ctx.ui.notify(`Antigravity CLI root: ${requested}`, "info");
+					return;
+				}
+				if (request === "update" || request === "upgrade") {
+					ctx.ui.notify("Checking the Antigravity CLI release manifest…", "info");
+					const result = await upgradeCli((message) => ctx.ui.notify(message, "info")).catch(
+						(error: unknown) => errorMessage(error),
+					);
+					if (typeof result === "string") {
+						ctx.ui.notify(`Antigravity CLI upgrade failed: ${result}`, "warning");
+						return;
+					}
+					ctx.ui.notify(
+						result.changed
+							? `Installed Antigravity CLI ${result.to} at ${result.path}. Restart Pi to launch it.`
+							: `Antigravity CLI ${result.to} is already the newest published release.`,
+						"info",
+					);
+					return;
+				}
+				if (request && request !== "status") {
+					ctx.ui.notify("Usage: /antigravity-acp cli [status|update|root [dir]|updates [automatic|notify|manual]]", "warning");
+					return;
+				}
+				const installation = await describeCliInstallation(resolveConfigRoot());
+				const { update } = installation;
+				ctx.ui.notify(
+					[
+						`Antigravity CLI: ${installation.version ?? "unknown"}${update.latest ? ` (latest published ${update.latest})` : ""}`,
+						`Path: ${installation.path ?? "not found"}${installation.source ? ` (${installation.source})` : ""}`,
+						`Managed root: ${installation.root}`,
+						`Upgrade: ${update.updateAvailable ? `available — run /antigravity-acp cli update` : update.latest ? "up to date" : "manifest unreachable"}; updates=${loadCliUpdates()}`,
+					].join("\n"),
+					update.updateAvailable ? "warning" : "info",
+				);
+				return;
+			}
 			if (command === "tool-activity" || command.startsWith("tool-activity ")) {
 				let requested = command.slice("tool-activity".length).trim().toLowerCase();
 				if (!requested) {
@@ -251,7 +316,7 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 			const verbose = command === "doctor --verbose";
 			if (command !== "doctor" && command !== "status" && !verbose) {
 				ctx.ui.notify(
-					"Usage: /antigravity-acp [setup|doctor|status|models|quota|update|updates|logout|account|qualify|permissions|tool-activity]",
+					"Usage: /antigravity-acp [setup|doctor|status|models|quota|update|updates|cli|logout|account|qualify|permissions|tool-activity]",
 					"warning",
 				);
 				return;
@@ -262,7 +327,7 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 			let runtimeLines: string[];
 			if (loadTransport().transport === "cli") {
 				runtimeLines = [
-					`Transport: official Antigravity CLI (${cliRuntime.path ?? "not found"}); updates are handled by agy`,
+					`Transport: official Antigravity CLI ${cliRuntime.version ?? "unknown"} (${cliRuntime.path ?? "not found"}); manage it with /antigravity-acp cli`,
 					`Authentication: ${
 						cliRuntime.status === "cli-login"
 							? "cli-login (OS keychain, managed by agy)"
@@ -310,6 +375,7 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		void announceCliUpdate(ctx);
 		if (loadConfig().runtimeUpdates !== "notify") return;
 		try {
 			const update = await checkAntigravityAcpUpdate();
@@ -361,6 +427,41 @@ function formatMetrics(metrics: {
 			? [`Latest quota: remaining=${quota.remaining ?? "unknown"}/${quota.limit ?? "unknown"} reset=${quota.resetAt ?? "unknown"} tier=${quota.tier ?? "unknown"} model=${quota.model ?? "unknown"}`]
 			: []),
 	].join("\n");
+}
+
+/** Runs once per session: `automatic` upgrades in the background, `notify`
+ * mentions a newer release, `manual` stays silent. Update failures stay quiet
+ * because a flaky manifest must never break startup. */
+async function announceCliUpdate(ctx: {
+	ui: { notify(message: string, level: "info" | "warning"): void };
+}): Promise<void> {
+	if (loadTransport().transport !== "cli") return;
+	const mode = loadCliUpdates();
+	if (mode === "manual") return;
+	try {
+		if (mode === "automatic") {
+			let progress: string | undefined;
+			const result = await upgradeCli((message) => {
+				progress = message;
+			});
+			if (result.changed) {
+				ctx.ui.notify(
+					`Antigravity CLI updated to ${result.to}${progress ? ` (${progress})` : ""}. It is used on the next session.`,
+					"info",
+				);
+			}
+			return;
+		}
+		const installation = await describeCliInstallation(resolveConfigRoot());
+		if (!installation.update.updateAvailable || !installation.update.latest) return;
+		ctx.ui.notify(
+			`Antigravity CLI ${installation.update.latest} is available (installed ${installation.version ?? "unknown"}). Run /antigravity-acp cli update.`,
+			"info",
+		);
+	} catch (error: unknown) {
+		if (error instanceof Error && /abort|fetch failed|ENOTFOUND|ETIMEDOUT/u.test(error.message)) return;
+		ctx.ui.notify(`Antigravity CLI update check failed: ${errorMessage(error)}`, "warning");
+	}
 }
 
 function formatQuota(snapshot: AntigravityQuotaSnapshot): string {

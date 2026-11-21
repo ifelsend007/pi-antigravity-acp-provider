@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadTransport, type TransportMode } from "../config.js";
 import { resolveAntigravityAcpLaunch } from "./antigravity.js";
-import { resolveAntigravityCli } from "./cli.js";
+import { resolveAntigravityCli, resolveConfiguredCli } from "./cli.js";
 import { AntigravityAcpError, redact } from "./errors.js";
 import {
 	configuredLaunchTempRoot,
@@ -304,11 +304,13 @@ export function planLaunch(options: AntigravityProcessOptions): LaunchPlan {
 		};
 	}
 	if ((options.transport ?? transportConfig.transport) === "cli") {
-		const cli = resolveAntigravityCli(options.cliPath ?? transportConfig.cliPath, { env });
+		const cli = options.cliPath
+			? resolveAntigravityCli(options.cliPath, { env, cliRoot: transportConfig.cliRoot })
+			: resolveConfiguredCli({ env });
 		if (!cli) {
 			throw new AntigravityAcpError(
 				"spawn",
-				"Antigravity CLI (agy) was not found; install it or set cliPath in the plugin config",
+				"Antigravity CLI (agy) was not found; run /antigravity-acp cli update or set cliPath in the plugin config",
 			);
 		}
 		// The CLI is a PyInstaller bundle too, so its unpacked files need confining.

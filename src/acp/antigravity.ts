@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { loadTransport } from "../config.js";
-import { resolveAntigravityCli } from "./cli.js";
+import { resolveConfiguredCli } from "./cli.js";
+import { versionFromManagedPath } from "./cli-install.js";
 import { AntigravityAcpError } from "./errors.js";
 
 export interface AntigravityLaunch {
@@ -148,13 +149,16 @@ export function hasAntigravityCli(): boolean {
 export interface AntigravityCliTransportHealth {
 	status: "cli-login" | "cli-missing";
 	path?: string;
+	version?: string;
 }
 
 export function inspectAntigravityCliTransport(): AntigravityCliTransportHealth {
 	const config = loadTransport();
 	if (config.transport !== "cli") return { status: "cli-missing" };
-	const found = resolveAntigravityCli(config.cliPath);
-	return found ? { status: "cli-login", path: found.path } : { status: "cli-missing" };
+	const found = resolveConfiguredCli();
+	if (!found) return { status: "cli-missing" };
+	const version = versionFromManagedPath(found.path);
+	return { status: "cli-login", path: found.path, ...(version ? { version } : {}) };
 }
 
 /** Local logout. Google currently advertises logout as an agent command rather
