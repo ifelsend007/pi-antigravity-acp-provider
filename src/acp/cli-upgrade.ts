@@ -41,19 +41,20 @@ export async function describeCliInstallation(configRoot: string): Promise<CliIn
 	};
 }
 
-/** Installs the published release into the managed root and repoints `cliPath`
- * at it, so the upgrade takes effect on the next session instead of leaving a
- * stale pinned path behind. */
+/** Installs the published release into the managed root and clears any pinned
+ * `cliPath` so the next session resolves the newest managed binary dynamically. */
 export async function upgradeCli(onProgress?: (message: string) => void): Promise<CliUpgradeResult> {
 	const release: CliRelease | undefined = await fetchLatestCliRelease();
 	if (!release) throw new Error("Antigravity CLI release manifest is unavailable");
-	const root = resolveCliRoot(loadTransport().cliRoot);
+	const config = loadTransport();
+	const root = resolveCliRoot(config.cliRoot);
 	const current = installedCliVersions(root)[0];
 	if (current && compareCliVersions(current.version, release.version) >= 0) {
+		if (config.cliPath) saveCliLocation({ cliPath: null });
 		return { changed: false, to: current.version, path: current.path };
 	}
 	const installed = await installCliRelease(release, { root, ...(onProgress ? { onProgress } : {}) });
-	saveCliLocation({ cliPath: installed });
+	if (config.cliPath) saveCliLocation({ cliPath: null });
 	pruneCliVersions(root);
 	return { changed: true, ...(current ? { from: current.version } : {}), to: release.version, path: installed };
 }
