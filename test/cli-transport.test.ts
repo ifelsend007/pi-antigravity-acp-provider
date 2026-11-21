@@ -41,6 +41,21 @@ describe("Antigravity CLI discovery", () => {
 		expect(candidates.at(-1)).toEqual({ path: path.join("C:/bin", "agy.exe"), source: "PATH" });
 	});
 
+	it("prefers an explicit pin over a managed copy and falls back when it is gone", () => {
+		const managedRoot = path.join(temporaryDirectory(), "managed");
+		fs.mkdirSync(path.join(managedRoot, "1.5.13"), { recursive: true });
+		fs.writeFileSync(path.join(managedRoot, "1.5.13", "agy.exe"), "binary");
+		const pinned = path.join(temporaryDirectory(), "agy.exe");
+		fs.writeFileSync(pinned, "binary");
+		const options = { cliRoot: managedRoot, env: {}, platform: "win32" as const };
+
+		expect(resolveAntigravityCli(pinned, options)).toEqual({ path: pinned, source: "config cliPath" });
+		expect(resolveAntigravityCli(path.join(managedRoot, "gone.exe"), options)).toEqual({
+			path: path.join(managedRoot, "1.5.13", "agy.exe"),
+			source: "managed 1.5.13",
+		});
+	});
+
 	it("returns the first executable candidate and ignores missing ones", () => {
 		const location = resolveAntigravityCli(
 			null,

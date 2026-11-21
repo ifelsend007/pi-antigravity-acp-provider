@@ -13,9 +13,10 @@ export interface AntigravityCliLocation {
 	source: string;
 }
 
-/** Candidate install locations, most explicit first: configured path, the
- * plugin's own managed copy, the CLI's state directory, then the desktop app's
- * bundled copy. */
+/** Candidate install locations, most explicit first: configured path, environment
+ * override, the plugin's own managed copies, then the CLI's state directory and
+ * the desktop app's bundled copy. An explicit pin must win over anything the
+ * plugin installed itself. */
 export interface AntigravityCliLookupOptions {
 	env?: NodeJS.ProcessEnv;
 	platform?: NodeJS.Platform;
@@ -30,16 +31,16 @@ export function antigravityCliCandidates(
 	const home = options.home ?? os.homedir();
 	const binary = antigravityCliBinary(platform);
 	const candidates: AntigravityCliLocation[] = [];
+	const configured = options.cliPath?.trim();
+	if (configured) candidates.push({ path: expandHome(configured, home), source: "config cliPath" });
+	const override = env.PI_ANTIGRAVITY_CLI?.trim() || env.AGY_CLI?.trim();
+	if (override) candidates.push({ path: expandHome(override, home), source: "environment" });
 	const root = options.cliRoot?.trim();
 	if (root) {
 		for (const installed of installedCliVersions(expandHome(root, home), platform)) {
 			candidates.push({ path: installed.path, source: `managed ${installed.version}` });
 		}
 	}
-	const configured = options.cliPath?.trim();
-	if (configured) candidates.push({ path: expandHome(configured, home), source: "config cliPath" });
-	const override = env.PI_ANTIGRAVITY_CLI?.trim() || env.AGY_CLI?.trim();
-	if (override) candidates.push({ path: expandHome(override, home), source: "environment" });
 	const appData = env.LOCALAPPDATA?.trim();
 	if (appData) candidates.push({ path: path.join(appData, "Programs", "Antigravity", binary), source: "desktop app" });
 	for (const directory of [
@@ -65,8 +66,8 @@ export function resolveAntigravityCli(
 	);
 }
 
-/** Resolves the CLI from the plugin config in one place: the managed root's
- * newest copy first, then `cliPath`, then the legacy and PATH locations. */
+/** Resolves the CLI from the plugin config in one place: `cliPath` when set and
+ * usable, then the managed root's newest copy, then the legacy and PATH locations. */
 export function resolveConfiguredCli(options: AntigravityCliLookupOptions = {}): AntigravityCliLocation | undefined {
 	const config = loadTransport();
 	return resolveAntigravityCli(config.cliPath, {
