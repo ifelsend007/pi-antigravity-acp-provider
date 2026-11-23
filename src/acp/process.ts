@@ -134,6 +134,13 @@ export function applyDefaultTlsEnvironment(
 	return env;
 }
 
+/** `agy` ships its own auto-updater, which stages and then replaces the binary in place.
+ * For a managed install that would rewrite the file `<cliRoot>/<version>/` pins, so the
+ * install record, integrity hash and rollback copies would all describe the old release. */
+export function applyCliUpdateEnvironment(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+	return { ...baseEnv, AGY_CLI_DISABLE_AUTO_UPDATE: "1" };
+}
+
 export class AntigravityProcess {
 	readonly generation = nextGeneration++;
 	readonly child: ChildProcessWithoutNullStreams;
@@ -157,11 +164,13 @@ export class AntigravityProcess {
 			resolveExit = resolve;
 		});
 
-		const env = applyCredentialStorageEnvironment(
-			applyDefaultTlsEnvironment(
-				applyAcpProxyEnvironment(launchTempEnv(options.env ?? process.env, launchTemp)),
+		const env = applyCliUpdateEnvironment(
+			applyCredentialStorageEnvironment(
+				applyDefaultTlsEnvironment(
+					applyAcpProxyEnvironment(launchTempEnv(options.env ?? process.env, launchTemp)),
+				),
+				options.credentialStorage ?? {},
 			),
-			options.credentialStorage ?? {},
 		);
 		const child = spawn(command, args, {
 			cwd: path.resolve(options.cwd),

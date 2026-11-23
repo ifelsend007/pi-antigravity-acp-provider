@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { planLaunch, resolveSupervisorEntry } from "../src/acp/process.js";
+import { applyCliUpdateEnvironment, planLaunch, resolveSupervisorEntry } from "../src/acp/process.js";
 
 const temporaryDirectories: string[] = [];
 let agentDir: string;
@@ -86,5 +86,20 @@ describe("launch planning", () => {
 			"--y",
 		]);
 		expect(plan.launchTempRoot).toBeUndefined();
+	});
+});
+
+describe("applyCliUpdateEnvironment", () => {
+	it.each([
+		["the variable is absent", {}],
+		["the caller already set it", { AGY_CLI_DISABLE_AUTO_UPDATE: "0" }],
+	] as const)("pins agy's own auto-updater off when %s", (_case, env) => {
+		expect(applyCliUpdateEnvironment({ ...env })).toEqual({ ...env, AGY_CLI_DISABLE_AUTO_UPDATE: "1" });
+	});
+
+	it("leaves the caller's environment object untouched", () => {
+		const env = { AGY_CLI_DISABLE_AUTO_UPDATE: "0" };
+		applyCliUpdateEnvironment(env);
+		expect(env.AGY_CLI_DISABLE_AUTO_UPDATE).toBe("0");
 	});
 });
