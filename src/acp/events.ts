@@ -1,5 +1,7 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk/unstable";
 
+import { truncateText } from "./text.js";
+
 export type AcpActivity =
 	| { type: "text"; delta: string }
 	| { type: "thought"; delta: string }
@@ -70,13 +72,13 @@ function toolContentText(content: SessionNotification["update"] extends infer _T
 		} else if (record.type === "content") {
 			const block = record.content as Record<string, unknown> | undefined;
 			if (block?.type === "text" && typeof block.text === "string") {
-				output.push(clean(block.text).slice(0, 2_000));
+				output.push(clean(block.text));
 			}
 		}
 	}
-	return output.join("\n").slice(0, 4_000);
+	return truncateText(output.join("\n"), 4_000);
 }
 
 function clean(value: string): string {
-	return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "").slice(0, 2_000);
+	return truncateText(value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, ""), 2_000);
 }

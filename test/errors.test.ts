@@ -24,4 +24,8 @@ describe("diagnostic redaction", () => {
 		expect(output).not.toContain("session=secret-value");
 		expect(output.match(/<redacted>/gu)?.length).toBeGreaterThanOrEqual(5);
 	});
+	it("bounds the length without splitting a surrogate pair", () => {
+		expect(redact(`${"a".repeat(4_095)}😀`)).toBe("a".repeat(4_095));
+		expect(redact("a".repeat(4_096))).toBe("a".repeat(4_096));
+	});
 });

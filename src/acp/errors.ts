@@ -1,3 +1,5 @@
+import { truncateText } from "./text.js";
+
 export type AntigravityAcpErrorCode =
 	| "aborted"
 	| "auth"
@@ -30,7 +32,7 @@ export function errorMessage(cause: unknown): string {
 }
 
 export function redact(text: string): string {
-	return text
+	const redacted = text
 		.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/giu, "$1<redacted>@")
 		.replace(/(?:AIza|sk-|npm_|gh[opurs]_)[A-Za-z0-9_-]{12,}/gu, "<redacted>")
 		.replace(/\b(?:ya29\.|1\/\/)[A-Za-z0-9._~+/-]{12,}/gu, "<redacted>")
@@ -38,6 +40,6 @@ export function redact(text: string): string {
 		.replace(
 			/((?:["']?(?:access_token|refresh_token|id_token|client_secret|api[-_]?key)["']?)\s*[:=]\s*["']?)[^"'\s,;&}]+/giu,
 			"$1<redacted>",
-		)
-		.slice(0, 4_096);
+		);
+	return truncateText(redacted, 4_096);
 }
