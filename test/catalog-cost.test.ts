@@ -33,6 +33,15 @@ describe("costRatesFor", () => {
 		expect(costRatesFor("gemini-4-carbon")).toEqual({ input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0 });
 	});
 
+	it("rates the orchestrator g1-pro alias at the Gemini 4 Argon prices", () => {
+		expect(costRatesFor("gemini-pro-orchestrator-g1-pro")).toEqual({ input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0 });
+		expect(costRatesFor("gemini-pro-orchestrator-g1-pro-high")).toEqual(costRatesFor("gemini-4-argon"));
+	});
+
+	it("leaves the neon orchestrator alias unpriced because no neon rates are published", () => {
+		expect(costRatesFor("gemini-pro-orchestrator-neon")).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+	});
+
 	it("keeps unknown families at zero rates instead of guessing", () => {
 		expect(costRatesFor("gemini-unknown-family")).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 	});

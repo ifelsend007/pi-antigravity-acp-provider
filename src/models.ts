@@ -31,10 +31,18 @@ const PRO_RATES = {
 	tiers: [{ input: 4, output: 18, cacheRead: 0.4, cacheWrite: 0, inputTokensAbove: 200_000 }],
 };
 
+/** Antigravity's orchestrator routing advertises an existing Gemini 4 model under an
+ * operator-facing alias. `gemini-pro-orchestrator-neon` has no alias because neither the
+ * model catalog nor Antigravity publishes rates for `gemini-4-neon`. */
+const ORCHESTRATOR_ALIASES: Readonly<Record<string, string>> = {
+	"gemini-pro-orchestrator-g1-pro": "gemini-4-argon",
+};
+
 /** Resolve the catalog rates for a projected model id. Effort-qualified ids share the
  * base model's rates, and `gemini-pro-agent` is Gemini 3.1 Pro under its agent name. */
 export function costRatesFor(modelId: string): Model<typeof API_ID>["cost"] {
-	const base = splitEffortSuffix(modelId)?.base ?? modelId;
+	const effortBase = splitEffortSuffix(modelId)?.base ?? modelId;
+	const base = ORCHESTRATOR_ALIASES[effortBase] ?? effortBase;
 	if (/^gemini-3\.[678]-flash$/u.test(base)) return FLASH_RATES;
 	if (/^gemini-4-hydrogen$/u.test(base)) return HYDROGEN_RATES;
 	if (/^gemini-4-argon$/u.test(base)) return ARGON_RATES;
