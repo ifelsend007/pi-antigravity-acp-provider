@@ -20,7 +20,6 @@ import { createHash } from "node:crypto";
 
 import {
 	clearAntigravityCredentials,
-	hasAntigravityAcpServer,
 	hasAntigravityCli,
 	inspectAntigravityAuth,
 	removeConversation,
@@ -313,10 +312,10 @@ export class AntigravityRuntime {
 	private async fetchQuota(apiKey: string | undefined): Promise<AntigravityQuotaSnapshot> {
 		this.assertActive();
 		const epoch = this.bindingEpoch;
-		// Only the managed server answers `/usage`; the official CLI has no such command.
-		// A runtime that owns its processes may install that server on demand, while an
-		// injected factory decides for itself which binary to run.
-		if (this.ensureAgent || (this.managesRuntime && !hasAntigravityAcpServer())) await ensureAntigravityAcpReady();
+		// `/usage` is served only by the managed server, so a runtime that owns its processes
+		// keeps that server current even when the CLI serves the agent. `ensureOnce` still
+		// honours `runtimeUpdates`, so `notify`/`manual` fetch nothing.
+		if (this.managesRuntime) await ensureAntigravityAcpReady();
 		this.assertEpoch(epoch);
 		let sessionId: string | undefined;
 		let text = "";
