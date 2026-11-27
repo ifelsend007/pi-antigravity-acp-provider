@@ -42,6 +42,23 @@ describe("costRatesFor", () => {
 		expect(costRatesFor("gemini-pro-orchestrator-neon")).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 	});
 
+	it.each([
+		["thinking", "gemini-4-argon-thinking"],
+		["tiered", "gemini-3.8-flash-tiered"],
+		["revision r", "gemini-4-carbon-r"],
+		["variant n", "gemini-4-hydrogen-n"],
+		["orchestrator label on a Gemini 4 family", "gemini-4-hydrogen-orchestrator"],
+		["effort plus thinking", "gemini-4-argon-thinking-high"],
+	])("rates a %s suffix at the base family prices", (_variant, modelId) => {
+		expect(costRatesFor(modelId)).not.toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+		expect(costRatesFor(modelId)).toEqual(costRatesFor(modelId.replace(/-(?:thinking|tiered|r|n|orchestrator)$/u, "")));
+	});
+
+	it("rates the bare orchestrator alias at the Gemini 4 Carbon prices", () => {
+		expect(costRatesFor("gemini-pro-orchestrator")).toEqual({ input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0 });
+		expect(costRatesFor("gemini-pro-orchestrator-high")).toEqual(costRatesFor("gemini-4-carbon"));
+	});
+
 	it("keeps unknown families at zero rates instead of guessing", () => {
 		expect(costRatesFor("gemini-unknown-family")).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 	});

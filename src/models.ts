@@ -32,23 +32,34 @@ const PRO_RATES = {
 };
 
 /** Antigravity's orchestrator routing advertises an existing Gemini 4 model under an
- * operator-facing alias. `gemini-pro-orchestrator-neon` has no alias because neither the
- * model catalog nor Antigravity publishes rates for `gemini-4-neon`. */
+ * operator-facing alias; the bare alias routes to Carbon. `gemini-pro-orchestrator-neon`
+ * has no alias because neither the model catalog nor Antigravity publishes rates for
+ * `gemini-4-neon`. */
 const ORCHESTRATOR_ALIASES: Readonly<Record<string, string>> = {
+	"gemini-pro-orchestrator": "gemini-4-carbon",
 	"gemini-pro-orchestrator-g1-pro": "gemini-4-argon",
 };
+
+/** Antigravity reuses one family under routing and reasoning suffixes. Rates depend on the
+ * family only, so the suffix is stripped before matching — but after the effort suffix,
+ * which yields `gemini-4-argon-thinking` for `gemini-4-argon-thinking-high`. */
+const ROUTING_SUFFIX = /-(?:extra-low|tiered|control|thinking|agent|orchestrator|trial|n|r)$/u;
 
 /** Resolve the catalog rates for a projected model id. Effort-qualified ids share the
  * base model's rates, and `gemini-pro-agent` is Gemini 3.1 Pro under its agent name. */
 export function costRatesFor(modelId: string): Model<typeof API_ID>["cost"] {
 	const effortBase = splitEffortSuffix(modelId)?.base ?? modelId;
-	const base = ORCHESTRATOR_ALIASES[effortBase] ?? effortBase;
+	return ratesForFamily(effortBase) ?? ratesForFamily(effortBase.replace(ROUTING_SUFFIX, "")) ?? ZERO_COST;
+}
+
+function ratesForFamily(modelId: string): Model<typeof API_ID>["cost"] | undefined {
+	const base = ORCHESTRATOR_ALIASES[modelId] ?? modelId;
 	if (/^gemini-3\.[678]-flash$/u.test(base)) return FLASH_RATES;
 	if (/^gemini-4-hydrogen$/u.test(base)) return HYDROGEN_RATES;
 	if (/^gemini-4-argon$/u.test(base)) return ARGON_RATES;
 	if (/^gemini-4-carbon$/u.test(base)) return CARBON_RATES;
 	if (/^(gemini-3\.1-pro|gemini-pro-agent)$/u.test(base)) return PRO_RATES;
-	return ZERO_COST;
+	return undefined;
 }
 
 // Keep the broadly available Flash model first for offline/default selection.
