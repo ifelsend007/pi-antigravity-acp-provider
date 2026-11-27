@@ -1463,15 +1463,49 @@ function findToolResult(
 	return undefined;
 }
 
+/** Gemini accepts 20 MB of inline data per request, so one tool result carries at most four
+ * 4 MB (base64) images; Antigravity drops oversized content instead of reporting it. */
+const MAX_TOOL_RESULT_IMAGE_BASE64_CHARS = 4 * 1024 * 1024;
+const MAX_TOOL_RESULT_IMAGES = 4;
+const BASE64_BODY = /^[A-Za-z0-9+/]+={0,2}$/u;
+
 function toMcpToolResult(message: ToolResultMessage): CallToolResult {
-	return {
-		content: message.content.map((block) =>
-			block.type === "text"
-				? { type: "text" as const, text: block.text }
-				: { type: "image" as const, data: block.data, mimeType: block.mimeType },
-		),
-		isError: message.isError,
-	};
+	const content: CallToolResult["content"] = [];
+	let images = 0;
+	let overflow = 0;
+	for (const block of message.content) {
+		if (block.type === "text") {
+			content.push({ type: "text", text: block.text });
+			continue;
+		}
+		if (images >= MAX_TOOL_RESULT_IMAGES) {
+			overflow += 1;
+			continue;
+		}
+		const problem = imageProblem(block);
+		if (problem) {
+			content.push({ type: "text", text: `[Pi omitted an image: ${problem}]` });
+			continue;
+		}
+		images += 1;
+		content.push({ type: "image", data: block.data, mimeType: block.mimeType });
+	}
+	if (overflow > 0) {
+		content.push({
+			type: "text",
+			text: `[Pi omitted ${overflow} image${overflow === 1 ? "" : "s"}: a tool result carries at most ${MAX_TOOL_RESULT_IMAGES} images]`,
+		});
+	}
+	return { content, isError: message.isError };
+}
+
+function imageProblem(block: { data: string; mimeType: string }): string | undefined {
+	if (!block.mimeType) return "missing media type";
+	if (block.data.length % 4 !== 0 || !BASE64_BODY.test(block.data)) return "not valid base64";
+	if (block.data.length > MAX_TOOL_RESULT_IMAGE_BASE64_CHARS) {
+		return `${block.mimeType} is ${block.data.length} base64 characters, above the ${MAX_TOOL_RESULT_IMAGE_BASE64_CHARS} limit`;
+	}
+	return undefined;
 }
 
 function cancelPermission(binding: Binding): void {

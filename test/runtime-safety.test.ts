@@ -733,6 +733,43 @@ describe("context handoff transport", () => {
 });
 
 describe("tool projection diagnostics", () => {
+	it.each([
+		["keeps a small image", [{ type: "image" as const, data: "aGVsbG8=", mimeType: "image/png" }], ["[image image/png 8]"]],
+		[
+			"drops an image above the base64 budget",
+			[{ type: "image" as const, data: "A".repeat(4_194_308), mimeType: "image/png" }],
+			["[Pi omitted an image: image/png is 4194308 base64 characters, above the 4194304 limit]"],
+		],
+		[
+			"drops a malformed image payload",
+			[{ type: "image" as const, data: "not base64!", mimeType: "image/png" }],
+			["[Pi omitted an image: not valid base64]"],
+		],
+		[
+			"drops an image without a media type",
+			[{ type: "image" as const, data: "aGVsbG8=", mimeType: "" }],
+			["[Pi omitted an image: missing media type]"],
+		],
+		[
+			"caps one result at four images",
+			Array.from({ length: 5 }, () => ({ type: "image" as const, data: "aGVsbG8=", mimeType: "image/png" })),
+			["[Pi omitted 1 image: a tool result carries at most 4 images]"],
+		],
+	])("projects a Pi tool result image: %s", async (_label, content, expected) => {
+		const { runtime } = setup();
+		const first = await drain(runtime.stream(model, { tools, messages: [user("use bridge")] }, { sessionId: "image-result", apiKey: "test-key" }));
+		const call = first.content.find((block) => block.type === "toolCall");
+		if (call?.type !== "toolCall") throw new Error("missing tool");
+		const second = await drain(runtime.stream(model, {
+			tools,
+			messages: [user("use bridge"), first,
+				{ role: "toolResult", toolCallId: call.id, toolName: call.name, content, isError: false, timestamp: 2 },
+			],
+		}, { sessionId: "image-result", apiKey: "test-key" }));
+		const text = second.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
+		for (const fragment of expected) expect(text).toContain(fragment);
+	});
+
 	it.each([undefined, "no-mcp"])("reports omitted tools and their reasons (agent=%s)", async (scenario) => {
 		const { runtime } = setup(scenario);
 		const writer = runtime.stream(model, { tools: [{ name: "unsupported", description: "bad", parameters: Type.String() }], messages: [user("hello")] }, { sessionId: "omissions", apiKey: "test-key" });

@@ -562,7 +562,11 @@ async function invokeMcpTool(server, text, onConnected) {
 		await client.connect(transport);
 		onConnected?.();
 		const result = await client.callTool({ name: "pi_echo", arguments: { text } });
-		return result.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
+		// Summarize non-text blocks so tests can assert what reached the agent without
+		// shipping megabytes of base64 back through the ACP prompt.
+		return result.content
+			.map((block) => (block.type === "text" ? block.text : `[${block.type} ${block.mimeType ?? ""} ${String(block.data?.length ?? 0)}]`))
+			.join("\n");
 	} finally {
 		await client.close();
 	}
